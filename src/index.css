@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --bg-app: #0a0a0c;
+    --bg-sidebar: #0c0c0e;
+    --bg-topbar: rgba(10, 10, 12, 0.85);
+    --bg-panel: #111115;
+    --bg-card: #16161b;
+    --bg-inner: #0e0e11;
+    --bg-input: #16161c;
+    --border-subtle: #181820;
+    --border-main: #1e1e26;
+    --border-card: #23232e;
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --nav-hover: #16161c;
+    --nav-active-bg: #181820;
+    --nav-active-border: #2a2a36;
+    --nav-active-text: #ffffff;
+    --accent-purple-bg: rgba(139, 92, 246, 0.15);
+    --accent-purple-border: rgba(139, 92, 246, 0.35);
+    --accent-purple-text: #c084fc;
+    --waveform-track-bg: #14141a;
+    --waveform-segment-bg: #181822;
+  }
+
+  html.light, .light {
+    color-scheme: light;
+    --bg-app: #f1f5f9;
+    --bg-sidebar: #ffffff;
+    --bg-topbar: rgba(255, 255, 255, 0.9);
+    --bg-panel: #ffffff;
+    --bg-card: #f8fafc;
+    --bg-inner: #f1f5f9;
+    --bg-input: #ffffff;
+    --border-subtle: #e2e8f0;
+    --border-main: #e2e8f0;
+    --border-card: #cbd5e1;
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --text-dim: #64748b;
+    --nav-hover: #f8fafc;
+    --nav-active-bg: #f3e8ff;
+    --nav-active-border: #d8b4fe;
+    --nav-active-text: #6b21a8;
+    --accent-purple-bg: #f3e8ff;
+    --accent-purple-border: #d8b4fe;
+    --accent-purple-text: #6b21a8;
+    --waveform-track-bg: #f1f5f9;
+    --waveform-segment-bg: #ffffff;
+  }
+
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  /* Custom subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(150, 150, 150, 0.25);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(150, 150, 150, 0.45);
+  }
+
+  /* Text selection */
+  ::selection {
+    background-color: rgba(139, 92, 246, 0.35);
+    color: inherit;
+  }
+}
+
+
+

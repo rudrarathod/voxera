@@ -1,0 +1,6 @@
+{
+  "name": "VOXERA",
+  "description": "AI Voice Generation and Voice Cloning Studio",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
