@@ -37,19 +37,26 @@ export interface AudioSegment {
 
 export interface GenerationHistoryItem {
   id: string;
+  projectId?: string;                    // Grouping ID
   title: string;
+  status?: 'draft' | 'exported' | 'archived'; // Lifecycle status
   voiceId: string;
   voiceName: string;
+  voicesSummary?: string;               // Summary of voices used
   language: string;
   duration: string;
   durationSec: number;
-  createdAt: string;
+  createdAt: string;                    // ISO 8601 string (or relative string for legacy)
+  updatedAt?: string;                   // ISO 8601 string
   segmentsCount: number;
   scriptSnippet: string;
+  fullScript?: string;                  // Full text of script
   isFavorited?: boolean;
   isBookmarked?: boolean;
   audioBlob?: Blob;
   segments?: AudioSegment[];
+  generationType?: 'segment' | 'regeneration' | 'master-export';
+  version?: number;
 }
 
 export interface AdvancedVoiceSettings {

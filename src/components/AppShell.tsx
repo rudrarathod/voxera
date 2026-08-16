@@ -23,6 +23,7 @@ export const AppShell: React.FC = () => {
   const [segments, setSegments] = useState<AudioSegment[]>(INITIAL_SEGMENTS);
   const [history, setHistory] = useState<GenerationHistoryItem[]>(INITIAL_HISTORY);
   const [projectName, setProjectName] = useState('Untitled Composition');
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => `proj-${Date.now()}`);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
@@ -158,21 +159,53 @@ export const AppShell: React.FC = () => {
     handleShowToast('History cleared', 'Permanently removed all audio logs', 'info');
   };
 
+  const handleNewProject = () => {
+    setCurrentProjectId(`proj-${Date.now()}`);
+  };
+
   const handleRenameHistoryItem = async (id: string, newTitle: string) => {
-    setHistory((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, title: newTitle } : item))
-    );
-    // Find the item from our history state and save the updated version to IndexedDB
+    // Find the item from our history state
     const itemToUpdate = history.find((item) => item.id === id);
-    if (itemToUpdate) {
-      const updated = { ...itemToUpdate, title: newTitle };
-      await VoxeraDB.saveHistoryItem(updated);
-      handleShowToast('Project renamed', `New name: ${newTitle}`, 'success');
+    if (!itemToUpdate) return;
+
+    const projectId = itemToUpdate.projectId;
+    const updatedAtIso = new Date().toISOString();
+
+    // Rename all versions of this project in UI state
+    setHistory((prev) =>
+      prev.map((item) =>
+        item.projectId === projectId
+          ? { ...item, title: newTitle, updatedAt: updatedAtIso }
+          : item
+      )
+    );
+
+    // Save all updated project versions to IndexedDB
+    const allMatchingItems = history.filter((item) => item.projectId === projectId);
+    for (const item of allMatchingItems) {
+      await VoxeraDB.saveHistoryItem({
+        ...item,
+        title: newTitle,
+        updatedAt: updatedAtIso,
+      });
     }
+
+    // Sync active project title if currently loaded in Studio
+    if (projectId === currentProjectId) {
+      setProjectName(newTitle);
+    }
+
+    handleShowToast('Project renamed', `New name: ${newTitle}`, 'success');
   };
 
   const handleLoadHistoryIntoStudio = (item: GenerationHistoryItem) => {
     setProjectName(item.title);
+    if (item.projectId) {
+      setCurrentProjectId(item.projectId);
+    } else {
+      setCurrentProjectId(`proj-legacy-${item.id}`);
+    }
+
     if (item.segments && item.segments.length > 0) {
       // Reconstruct object URLs from segment audio blobs
       const reconstructedSegments = item.segments.map((seg) => {
@@ -204,7 +237,7 @@ export const AppShell: React.FC = () => {
         voiceName: voiceMatch.name,
         language: item.language,
         durationSec: item.durationSec,
-        createdAt: 'From history',
+        createdAt: new Date().toISOString(),
         waveformPeaks: [0.4, 0.8, 0.6, 0.9, 0.5, 0.7, 0.3, 0.8, 0.6, 0.4, 0.9, 0.7, 0.5, 0.8, 0.6],
       };
 
@@ -221,8 +254,18 @@ export const AppShell: React.FC = () => {
   };
 
   const handleAddHistoryItem = async (item: GenerationHistoryItem) => {
-    setHistory((prev) => [item, ...prev]);
-    await VoxeraDB.saveHistoryItem(item);
+    // Fill version if not provided
+    const itemCopy = { ...item };
+    if (itemCopy.version === undefined) {
+      const existingVersions = history.filter((h) => h.projectId === itemCopy.projectId);
+      itemCopy.version = existingVersions.length + 1;
+    }
+    if (!itemCopy.updatedAt) {
+      itemCopy.updatedAt = itemCopy.createdAt;
+    }
+
+    setHistory((prev) => [itemCopy, ...prev]);
+    await VoxeraDB.saveHistoryItem(itemCopy);
   };
 
   return (
@@ -261,6 +304,8 @@ export const AppShell: React.FC = () => {
               onOpenConnectionModal={() => setIsOpenConnectionModal(true)}
               projectName={projectName}
               onRenameProject={setProjectName}
+              currentProjectId={currentProjectId}
+              onNewProject={handleNewProject}
             />
           )}
 

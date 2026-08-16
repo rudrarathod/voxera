@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Voice, AudioSegment, AdvancedVoiceSettings } from '../../types';
+import { Voice, AudioSegment, AdvancedVoiceSettings, GenerationHistoryItem } from '../../types';
 import { ScriptEditor } from './ScriptEditor';
 import { VoicePanel } from './VoicePanel';
 import { VoicePickerModal } from './VoicePickerModal';
@@ -76,6 +76,8 @@ interface StudioPageProps {
   onOpenConnectionModal: () => void;
   projectName: string;
   onRenameProject: (name: string) => void;
+  currentProjectId: string;
+  onNewProject: () => void;
 }
 
 export const StudioPage: React.FC<StudioPageProps> = ({
@@ -92,6 +94,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   onOpenConnectionModal,
   projectName,
   onRenameProject,
+  currentProjectId,
+  onNewProject,
 }) => {
   const [scriptText, setScriptText] = useState(
     'Welcome to Voxera. This is a test of the AI voice studio.'
@@ -333,17 +337,23 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
       const newHistoryItem: GenerationHistoryItem = {
         id: `hist-${Date.now()}`,
-        title: segmentTitle,
+        projectId: currentProjectId,
+        title: projectName === 'Untitled Composition' ? segmentTitle : projectName,
+        status: 'draft',
         voiceId: selectedVoice.id,
         voiceName: selectedVoice.name,
+        voicesSummary: Array.from(new Set(updatedSegments.map(s => s.voiceName))).join(', '),
         language: language,
         duration: `${durationSec}s`,
         durationSec: durationSec,
-        createdAt: 'Just now',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         segmentsCount: updatedSegments.length,
         scriptSnippet: scriptText.length > 60 ? `${scriptText.slice(0, 60)}...` : scriptText,
+        fullScript: scriptText,
         audioBlob: blob,
         segments: cleanSegments,
+        generationType: 'segment',
       };
       onAddHistoryItem(newHistoryItem);
     } catch (error: any) {
@@ -532,19 +542,25 @@ export const StudioPage: React.FC<StudioPageProps> = ({
               return copy;
             });
             const mergedBlob = await mergeAudioBlobs(generatedBlobs);
-            const newHistoryItem: GenerationHistoryItem = {
+             const newHistoryItem: GenerationHistoryItem = {
               id: `project-${Date.now()}`,
+              projectId: currentProjectId,
               title: projectName === 'Untitled Composition' ? `Imported Script Project (${generatedBlobs.length} segments)` : projectName,
+              status: 'draft',
               voiceId: selectedVoice.id,
               voiceName: selectedVoice.name,
+              voicesSummary: Array.from(new Set(currentSegmentsState.map(s => s.voiceName))).join(', '),
               language: language,
               duration: `${totalDurationSec.toFixed(1)}s`,
               durationSec: totalDurationSec,
-              createdAt: 'Just now',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               segmentsCount: generatedBlobs.length,
               scriptSnippet: combinedText.length > 100 ? `${combinedText.slice(0, 100)}...` : combinedText,
+              fullScript: combinedText,
               audioBlob: mergedBlob,
               segments: cleanSegments,
+              generationType: 'segment',
             };
             onAddHistoryItem(newHistoryItem);
           } catch (mergeErr) {
@@ -712,17 +728,23 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         const mergedBlob = await mergeAudioBlobs(generatedBlobs);
         const newHistoryItem: GenerationHistoryItem = {
           id: `project-${Date.now()}`,
+          projectId: currentProjectId,
           title: projectName === 'Untitled Composition' ? `Generated Remaining (${generatedBlobs.length} segments)` : `${projectName} (Remaining)`,
+          status: 'draft',
           voiceId: selectedVoice.id,
           voiceName: selectedVoice.name,
+          voicesSummary: Array.from(new Set(currentSegmentsState.map(s => s.voiceName))).join(', '),
           language: language,
           duration: `${totalDurationSec.toFixed(1)}s`,
           durationSec: totalDurationSec,
-          createdAt: 'Just now',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           segmentsCount: generatedBlobs.length,
           scriptSnippet: combinedText.length > 100 ? `${combinedText.slice(0, 100)}...` : combinedText,
+          fullScript: combinedText,
           audioBlob: mergedBlob,
           segments: cleanSegments,
+          generationType: 'segment',
         };
         onAddHistoryItem(newHistoryItem);
       } catch (mergeErr) {
@@ -840,17 +862,23 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
       const newHistoryItem: GenerationHistoryItem = {
         id: `hist-${Date.now()}`,
-        title: `Regenerated Segment #${targetSeg.segmentNumber}`,
+        projectId: currentProjectId,
+        title: projectName === 'Untitled Composition' ? `Regenerated Segment #${targetSeg.segmentNumber}` : projectName,
+        status: 'draft',
         voiceId: targetSeg.voiceId,
         voiceName: targetSeg.voiceName,
+        voicesSummary: Array.from(new Set(updatedSegments.map(s => s.voiceName))).join(', '),
         language: targetSeg.language || 'English',
         duration: `${durationSec}s`,
         durationSec: durationSec,
-        createdAt: 'Just now',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         segmentsCount: updatedSegments.length,
         scriptSnippet: targetSeg.text.length > 60 ? `${targetSeg.text.slice(0, 60)}...` : targetSeg.text,
+        fullScript: targetSeg.text,
         audioBlob: blob,
         segments: cleanSegments,
+        generationType: 'regeneration',
       };
       onAddHistoryItem(newHistoryItem);
     } catch (error: any) {
@@ -923,17 +951,23 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
       const projectHistoryItem: GenerationHistoryItem = {
         id: `project-export-${Date.now()}`,
+        projectId: currentProjectId,
         title: projectName === 'Untitled Composition' ? 'Composition Master Export' : `${projectName} (Master Export)`,
+        status: 'exported',
         voiceId: selectedVoice.id,
         voiceName: selectedVoice.name,
+        voicesSummary: Array.from(new Set(segments.map(s => s.voiceName))).join(', '),
         language: language,
         duration: `${totalDurationSec.toFixed(1)}s`,
         durationSec: totalDurationSec,
-        createdAt: 'Just now',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         segmentsCount: segments.length,
         scriptSnippet: combinedText.length > 100 ? `${combinedText.slice(0, 100)}...` : combinedText,
+        fullScript: combinedText,
         audioBlob: mergedBlob,
         segments: cleanSegments,
+        generationType: 'master-export',
       };
       onAddHistoryItem(projectHistoryItem);
       
@@ -965,6 +999,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     setSegments([]);
     setSelectedSegmentId(null);
     onRenameProject('Untitled Composition');
+    onNewProject();
     setIsRenameOpen(true);
     onShowToast('Timeline cleared', 'Timeline cleared. Enter a name for your new project.', 'info');
   };

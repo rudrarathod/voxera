@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { GenerationHistoryItem } from '../../types';
-import { Search, Play, Pause, Download, Trash2, ArrowRight, Copy, Check, FileAudio, Pencil } from 'lucide-react';
+import { Search, Trash2, FileAudio, LayoutGrid, ListFilter, ArrowUpDown } from 'lucide-react';
 import { AudioEngine } from '../../utils/audioEngine';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RenameProjectModal } from '../studio/RenameProjectModal';
+import { HistoryProjectCard } from './HistoryProjectCard';
+import { HistoryVersionRow } from './HistoryVersionRow';
+import { isWithinPeriod } from '../../utils/timeFormat';
 
 interface HistoryPageProps {
   history: GenerationHistoryItem[];
@@ -23,24 +26,94 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
   onRenameHistoryItem,
 }) => {
   const [search, setSearch] = useState('');
-  const [filterPeriod, setFilterPeriod] = useState<'All' | 'Today' | 'This week'>('All');
+  const [filterPeriod, setFilterPeriod] = useState<'All' | 'Today' | 'This week' | 'This month'>('All');
+  const [sortBy, setSortBy] = useState<'Newest' | 'Oldest' | 'Name' | 'Duration'>('Newest');
+  const [viewMode, setViewMode] = useState<'projects' | 'flat'>('projects');
+  
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [renamingItem, setRenamingItem] = useState<GenerationHistoryItem | null>(null);
+  const [deletingItem, setDeletingItem] = useState<GenerationHistoryItem | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<{ projectId: string; title: string } | null>(null);
 
+  // 1. Filter items first
   const filtered = history.filter((item) => {
     const matchesSearch =
       item.title.toLowerCase().includes(search.toLowerCase()) ||
       item.voiceName.toLowerCase().includes(search.toLowerCase()) ||
-      item.scriptSnippet.toLowerCase().includes(search.toLowerCase());
+      item.scriptSnippet.toLowerCase().includes(search.toLowerCase()) ||
+      (item.fullScript && item.fullScript.toLowerCase().includes(search.toLowerCase()));
 
-    if (filterPeriod === 'Today') {
-      return matchesSearch && (item.createdAt.includes('Just now') || item.createdAt.includes('hours') || item.createdAt.includes('minute'));
-    }
-    return matchesSearch;
+    const matchesPeriod = isWithinPeriod(item.updatedAt || item.createdAt, filterPeriod);
+
+    return matchesSearch && matchesPeriod;
   });
 
+  // 2. Group by projectId (for projects view)
+  const projectsMap: { [projectId: string]: { name: string; versions: GenerationHistoryItem[] } } = {};
+  filtered.forEach((item) => {
+    const pId = item.projectId || `proj-legacy-${item.id}`;
+    if (!projectsMap[pId]) {
+      projectsMap[pId] = {
+        name: item.title,
+        versions: [],
+      };
+    }
+    projectsMap[pId].versions.push(item);
+  });
+
+  // 3. Sort projects by latest modified timestamp of any version in that project
+  const sortedProjects = Object.entries(projectsMap).map(([pId, data]) => {
+    const timestamps = data.versions.map((v) => new Date(v.updatedAt || v.createdAt).getTime());
+    const latestTimestamp = timestamps.length > 0 ? Math.max(...timestamps) : 0;
+    
+    const sortedVers = [...data.versions].sort((a, b) => (b.version || 0) - (a.version || 0));
+    const latestName = sortedVers[0]?.title || data.name;
+
+    return {
+      projectId: pId,
+      projectName: latestName,
+      versions: data.versions,
+      latestTimestamp,
+      maxDuration: Math.max(...data.versions.map(v => v.durationSec)),
+    };
+  });
+
+  const sortedAndFilteredProjects = sortedProjects.sort((a, b) => {
+    if (sortBy === 'Newest') {
+      return b.latestTimestamp - a.latestTimestamp;
+    }
+    if (sortBy === 'Oldest') {
+      return a.latestTimestamp - b.latestTimestamp;
+    }
+    if (sortBy === 'Name') {
+      return a.projectName.localeCompare(b.projectName);
+    }
+    if (sortBy === 'Duration') {
+      return b.maxDuration - a.maxDuration;
+    }
+    return 0;
+  });
+
+  // 4. Sort flat generations list
+  const sortedFlatGenerations = [...filtered].sort((a, b) => {
+    if (sortBy === 'Newest') {
+      return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+    }
+    if (sortBy === 'Oldest') {
+      return new Date(a.updatedAt || a.createdAt).getTime() - new Date(b.updatedAt || b.createdAt).getTime();
+    }
+    if (sortBy === 'Name') {
+      return a.title.localeCompare(b.title);
+    }
+    if (sortBy === 'Duration') {
+      return b.durationSec - a.durationSec;
+    }
+    return 0;
+  });
+
+  // Audio Playback
   const handleTogglePlay = (item: GenerationHistoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
     if (playingId === item.id) {
@@ -56,36 +129,41 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
     }
   };
 
+  // WAV Download
   const handleDownload = (item: GenerationHistoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
     if (item.audioBlob) {
       const url = URL.createObjectURL(item.audioBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${item.title.replace(/\s+/g, '_')}_${item.voiceName}.wav`;
+      a.download = `${item.title.replace(/\s+/g, '_')}_V${item.version || 1}.wav`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       onShowToast('Downloaded WAV file', item.title, 'success');
     } else {
-      onShowToast('Download simulated', 'No audio blob found for this mock item.', 'info');
+      onShowToast('Download simulated', 'No audio blob found for this item.', 'info');
     }
   };
 
+  // Copy Script
   const handleCopyText = (item: GenerationHistoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(item.scriptSnippet);
+    const textToCopy = item.fullScript || item.scriptSnippet;
+    navigator.clipboard.writeText(textToCopy);
     setCopiedId(item.id);
     onShowToast('Copied to clipboard', 'Script text copied successfully', 'success');
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const [deletingItem, setDeletingItem] = useState<GenerationHistoryItem | null>(null);
-
-  const handleDelete = (item: GenerationHistoryItem, e: React.MouseEvent) => {
+  const handleDeleteVersionClick = (item: GenerationHistoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeletingItem(item);
+  };
+
+  const handleDeleteProjectClick = (projectId: string, title: string) => {
+    setProjectToDelete({ projectId, title });
   };
 
   return (
@@ -95,7 +173,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         <div>
           <h2 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider">Generation History</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Review, listen to, download, and re-open past timeline compositions
+            Review, listen to, download, and restore past timelines grouped by project
           </p>
         </div>
 
@@ -103,7 +181,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
           <button
             type="button"
             onClick={() => setIsConfirmClearOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/5 transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/5 transition-all cursor-pointer"
             title="Clear all generation history"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -112,39 +190,124 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         )}
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-        {/* Period Pills */}
-        <div className="flex items-center gap-1 p-1 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-lg">
-          {(['All', 'Today', 'This week'] as const).map((period) => (
+      {/* Filter, Sort, View Controls */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shrink-0 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-xl p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
             <button
-              key={period}
-              onClick={() => setFilterPeriod(period)}
-              className={`px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
-                filterPeriod === period
+              onClick={() => setViewMode('projects')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+                viewMode === 'projects'
                   ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
               }`}
             >
-              {period}
+              <LayoutGrid className="w-3 h-3" />
+              <span>Projects</span>
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode('flat')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+                viewMode === 'flat'
+                  ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+              }`}
+            >
+              <ListFilter className="w-3 h-3" />
+              <span>Flat List</span>
+            </button>
+          </div>
+
+          {/* Period Pills */}
+          <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
+            {(['All', 'Today', 'This week', 'This month'] as const).map((period) => (
+              <button
+                key={period}
+                onClick={() => setFilterPeriod(period)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+                  filterPeriod === period
+                    ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                }`}
+              >
+                {period === 'All' ? 'All Time' : period}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search script, voice, title..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-lg text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden focus:border-purple-500/60"
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          {/* Sorting */}
+          <div className="relative w-full sm:w-auto flex items-center gap-2">
+            <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold shrink-0">Sort By</span>
+            <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
+              {(['Newest', 'Oldest', 'Name', 'Duration'] as const).map((sortOpt) => (
+                <button
+                  key={sortOpt}
+                  onClick={() => setSortBy(sortOpt)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+                    sortBy === sortOpt
+                      ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                  }`}
+                >
+                  {sortOpt === 'Name' ? 'A-Z' : sortOpt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search project, snippet, voice..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden focus:border-purple-500/60"
+            />
+          </div>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Main Content Area */}
+      {viewMode === 'projects' ? (
+        sortedAndFilteredProjects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-12 bg-[var(--bg-panel)] border border-[var(--border-main)] border-dashed rounded-2xl text-center max-w-md mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-full bg-purple-600/10 flex items-center justify-center text-purple-400">
+              <FileAudio className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No Project History</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                No matching projects were found. Try modifying your filters or create a new audio clip in the studio.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {sortedAndFilteredProjects.map((project) => (
+              <HistoryProjectCard
+                key={project.projectId}
+                projectId={project.projectId}
+                projectName={project.projectName}
+                versions={project.versions}
+                playingId={playingId}
+                copiedId={copiedId}
+                onTogglePlay={handleTogglePlay}
+                onDownload={handleDownload}
+                onCopyText={handleCopyText}
+                onLoadIntoStudio={onLoadHistoryIntoStudio}
+                onDeleteVersion={handleDeleteVersionClick}
+                onDeleteProject={handleDeleteProjectClick}
+                onRenameProject={(item) => setRenamingItem(item)}
+              />
+            ))}
+          </div>
+        )
+      ) : sortedFlatGenerations.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 bg-[var(--bg-panel)] border border-[var(--border-main)] border-dashed rounded-2xl text-center max-w-md mx-auto space-y-4">
           <div className="w-12 h-12 rounded-full bg-purple-600/10 flex items-center justify-center text-purple-400">
             <FileAudio className="w-6 h-6" />
@@ -152,150 +315,67 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No History Records</h3>
             <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-              No matching generations were found for "{search}". Try another filter or create a new audio clip in the studio.
+              No matching generations were found. Try modifying your filters or create a new audio clip in the studio.
             </p>
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((item) => {
-            const isPlaying = playingId === item.id;
-
-            return (
-              <div
-                key={item.id}
-                onClick={() => onLoadHistoryIntoStudio(item)}
-                className="group relative flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[var(--bg-panel)] hover:bg-[var(--bg-card)] border border-[var(--border-main)] hover:border-purple-500/30 rounded-xl transition-all cursor-pointer hover:shadow-xs duration-200"
-              >
-                {/* Left Side: Playback Trigger & Text details */}
-                <div className="flex items-start gap-4 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={(e) => handleTogglePlay(item, e)}
-                    className={`p-2.5 rounded-full transition-all shrink-0 cursor-pointer shadow-sm active:scale-95 ${
-                      isPlaying
-                        ? 'bg-purple-600 text-white shadow-purple-500/30'
-                        : 'bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-main)]'
-                    }`}
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-4 h-4" />
-                    ) : (
-                      <Play className="w-4 h-4 ml-0.5" />
-                    )}
-                  </button>
-
-                  <div className="min-w-0 space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-[var(--text-main)]">{item.title}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRenamingItem(item);
-                        }}
-                        className="p-1 rounded hover:bg-[var(--bg-card)] text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
-                        title="Rename project"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-[var(--bg-inner)] text-[var(--text-dim)] border border-[var(--border-subtle)]">
-                        {item.durationSec > 0 ? `${item.durationSec}s` : item.duration}
-                      </span>
-                      {item.segmentsCount > 1 && (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                          {item.segmentsCount} segments
-                        </span>
-                      )}
-                      <span className="text-[10px] text-[var(--text-dim)] font-mono ml-auto md:ml-0">
-                        {item.createdAt}
-                      </span>
-                    </div>
-
-                    {/* Script Snippet Block */}
-                    <div className="relative group/snippet max-w-2xl bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg py-1.5 pl-3 pr-8">
-                      <p className="text-[11px] text-[var(--text-muted)] italic leading-relaxed truncate">
-                        "{item.scriptSnippet}"
-                      </p>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyText(item, e)}
-                        className="absolute right-2 top-1.5 p-1 rounded hover:bg-[var(--bg-card)] text-[var(--text-dim)] hover:text-[var(--text-main)] opacity-0 group-hover/snippet:opacity-100 transition-opacity duration-150 cursor-pointer"
-                        title="Copy script text"
-                      >
-                        {copiedId === item.id ? (
-                          <Check className="w-3 h-3 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Side: Meta Tag (Voice) & Action Triggers */}
-                <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t border-[var(--border-subtle)] md:border-t-0 pt-3 md:pt-0">
-                  {/* Voice tag */}
-                  <div className="text-[11px] font-medium text-left md:text-right shrink-0">
-                    <span className="text-purple-400 font-bold">{item.voiceName}</span>
-                    <p className="text-[10px] text-[var(--text-dim)] mt-0.5">{item.language}</p>
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div
-                    className="flex items-center gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onLoadHistoryIntoStudio(item)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
-                    >
-                      <span>Open Studio</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => handleDownload(item, e)}
-                      className="p-2 rounded-lg bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer transition-colors"
-                      title="Download WAV file"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => handleDelete(item, e)}
-                      className="p-2 rounded-lg bg-[var(--bg-card)] hover:bg-red-500/10 border border-[var(--border-main)] hover:border-red-500/30 text-[var(--text-muted)] hover:text-red-500 transition-colors cursor-pointer"
-                      title="Delete record"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-2.5">
+          {sortedFlatGenerations.map((item) => (
+            <HistoryVersionRow
+              key={item.id}
+              item={item}
+              isPlaying={playingId === item.id}
+              copiedId={copiedId}
+              onTogglePlay={handleTogglePlay}
+              onDownload={handleDownload}
+              onCopyText={handleCopyText}
+              onLoadIntoStudio={onLoadHistoryIntoStudio}
+              onDelete={handleDeleteVersionClick}
+            />
+          ))}
         </div>
       )}
 
       {/* Delete Record Confirmation Dialog */}
       <ConfirmDialog
         isOpen={deletingItem !== null}
-        title="Delete Record"
-        description={`Are you sure you want to delete the audio generation record "${deletingItem?.title}"? This action cannot be undone.`}
-        confirmLabel="Delete Permanently"
-        cancelLabel="Keep Record"
+        title="Delete Version"
+        description={`Are you sure you want to delete version ${deletingItem?.version || 1} of "${deletingItem?.title}"? This action cannot be undone.`}
+        confirmLabel="Delete Version"
+        cancelLabel="Keep Version"
         isDanger={true}
         onConfirm={() => {
           if (deletingItem) {
             onDeleteHistoryItem(deletingItem.id);
-            onShowToast('Record deleted', deletingItem.title, 'info');
+            onShowToast('Version deleted', `Version ${deletingItem.version || 1} of ${deletingItem.title}`, 'info');
           }
           setDeletingItem(null);
         }}
         onCancel={() => setDeletingItem(null)}
+      />
+
+      {/* Delete Project Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={projectToDelete !== null}
+        title="Delete Project History"
+        description={`Are you sure you want to delete the project "${projectToDelete?.title}"? This will permanently remove all ${
+          history.filter((item) => (item.projectId || `proj-legacy-${item.id}`) === projectToDelete?.projectId).length
+        } versions of this project. This action cannot be undone.`}
+        confirmLabel="Delete Project"
+        cancelLabel="Keep Project"
+        isDanger={true}
+        onConfirm={() => {
+          if (projectToDelete) {
+            const versionsToDelete = history.filter(
+              (item) => (item.projectId || `proj-legacy-${item.id}`) === projectToDelete.projectId
+            );
+            versionsToDelete.forEach((v) => onDeleteHistoryItem(v.id));
+            onShowToast('Project deleted', projectToDelete.title, 'info');
+          }
+          setProjectToDelete(null);
+        }}
+        onCancel={() => setProjectToDelete(null)}
       />
 
       {/* Clear All History Confirmation Dialog */}
