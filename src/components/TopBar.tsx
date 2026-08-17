@@ -104,6 +104,18 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Google Colab Backend Link Button */}
+        <a
+          href="https://colab.research.google.com/drive/1jjvIw0eyLTzDOKSz9U7JCvX0N7ug8AfD?usp=sharing"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-md bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-orange-500 hover:border-orange-500/20 transition-colors flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer"
+          title="Open Google Colab Backend Notebook"
+        >
+          <Link2 className="w-3.5 h-3.5 text-orange-500" />
+          <span className="hidden sm:inline">Colab Notebook</span>
+        </a>
+
         {/* Backend Connection Status Indicator */}
         <button
           type="button"

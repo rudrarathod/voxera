@@ -143,6 +143,17 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </button>
           )}
 
+          {/* Open Google Colab Notebook Button */}
+          <a
+            href="https://colab.research.google.com/drive/1jjvIw0eyLTzDOKSz9U7JCvX0N7ug8AfD?usp=sharing"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2 px-3 rounded-lg bg-orange-600/10 hover:bg-orange-600 border border-orange-500/20 hover:border-orange-600 text-orange-400 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-98"
+          >
+            <Link2 className="w-3.5 h-3.5 text-orange-500 group-hover:text-white" />
+            <span>Open Google Colab Notebook</span>
+          </a>
+
           {/* URL Input Form */}
           <div className="space-y-1">
             <div className="flex justify-between items-center px-0.5">

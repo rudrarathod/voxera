@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Volume2, Moon, RefreshCw, CheckCircle2, AlertCircle, Clipboard, Database } from 'lucide-react';
+import { Cpu, Volume2, Moon, RefreshCw, CheckCircle2, AlertCircle, Clipboard, Database, Link2 } from 'lucide-react';
 import { checkHealth, BackendHealth } from '../../utils/api';
 
 interface SettingsPageProps {
@@ -293,16 +293,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-medium text-[var(--text-main)]">FastAPI / Chatterbox Endpoint</label>
-                {typeof window !== 'undefined' && navigator.clipboard && navigator.clipboard.readText && (
-                  <button
-                    type="button"
-                    onClick={handlePasteFromClipboard}
-                    className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                <div className="flex items-center gap-3">
+                  <a
+                    href="https://colab.research.google.com/drive/1jjvIw0eyLTzDOKSz9U7JCvX0N7ug8AfD?usp=sharing"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Open Google Colab Backend Notebook"
                   >
-                    <Clipboard className="w-3 h-3" />
-                    Paste & Connect
-                  </button>
-                )}
+                    <Link2 className="w-3 h-3" />
+                    Colab Notebook
+                  </a>
+                  {typeof window !== 'undefined' && navigator.clipboard && navigator.clipboard.readText && (
+                    <button
+                      type="button"
+                      onClick={handlePasteFromClipboard}
+                      className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Clipboard className="w-3 h-3" />
+                      Paste & Connect
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input
