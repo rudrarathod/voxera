@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppTab } from '../types';
-import { Mic2, Layers, History, Settings, Sparkles, X } from 'lucide-react';
+import { Mic2, FolderOpen, Settings, Sparkles, X } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: AppTab;
@@ -16,9 +16,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
 }) => {
   const navItems = [
+    { id: 'projects' as AppTab, label: 'Projects', icon: FolderOpen },
     { id: 'studio' as AppTab, label: 'Studio', icon: Sparkles },
     { id: 'voices' as AppTab, label: 'Voices', icon: Mic2 },
-    { id: 'history' as AppTab, label: 'History', icon: History },
   ];
 
   const handleNav = (tab: AppTab) => {

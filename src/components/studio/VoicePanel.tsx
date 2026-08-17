@@ -33,6 +33,78 @@ export const VoicePanel: React.FC<VoicePanelProps> = ({
   const [isPlayingReference, setIsPlayingReference] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(true);
 
+  interface SavedPreset {
+    name: string;
+    temperature: number;
+    cfgScale: number;
+    seed: number;
+    model: string;
+  }
+
+  const staticPresets: Record<string, Omit<SavedPreset, 'name'>> = {
+    'Default': { temperature: 0.7, cfgScale: 1.5, seed: 429103, model: 'chatterbox-turbo' },
+    'Expressive / Creative': { temperature: 0.85, cfgScale: 2.0, seed: -1, model: 'chatterbox-turbo' },
+    'Steady / Consistent': { temperature: 0.5, cfgScale: 1.2, seed: 42, model: 'chatterbox-turbo' },
+    'Robotic / Monotone': { temperature: 0.3, cfgScale: 1.0, seed: 100, model: 'chatterbox-turbo' }
+  };
+
+  const [customPresets, setCustomPresets] = useState<SavedPreset[]>(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const saved = localStorage.getItem('voxera_custom_presets');
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+  const [newPresetName, setNewPresetName] = useState('');
+  const [selectedPresetName, setSelectedPresetName] = useState('Default');
+
+  const handleSelectPreset = (name: string) => {
+    setSelectedPresetName(name);
+    if (staticPresets[name]) {
+      setAdvancedSettings({
+        ...advancedSettings,
+        ...staticPresets[name]
+      });
+    } else {
+      const custom = customPresets.find(p => p.name === name);
+      if (custom) {
+        setAdvancedSettings({
+          temperature: custom.temperature,
+          cfgScale: custom.cfgScale,
+          seed: custom.seed,
+          model: custom.model
+        });
+      }
+    }
+  };
+
+  const handleSavePreset = () => {
+    if (!newPresetName.trim()) return;
+    const name = newPresetName.trim();
+    if (staticPresets[name] || customPresets.some(p => p.name === name)) {
+      alert('A preset with this name already exists.');
+      return;
+    }
+    const newPreset: SavedPreset = {
+      name,
+      temperature: advancedSettings.temperature,
+      cfgScale: advancedSettings.cfgScale,
+      seed: advancedSettings.seed,
+      model: advancedSettings.model
+    };
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('voxera_custom_presets', JSON.stringify(updated));
+    }
+    setNewPresetName('');
+    setSelectedPresetName(name);
+  };
+
   const handleToggleReference = () => {
     if (isPlayingReference) {
       AudioEngine.stop();
@@ -230,6 +302,28 @@ export const VoicePanel: React.FC<VoicePanelProps> = ({
 
         {showAdvanced && (
           <div className="mt-2.5 p-3 rounded-lg bg-[var(--bg-inner)] border border-[var(--border-subtle)] grid grid-cols-2 gap-3 text-xs animate-in fade-in duration-150">
+            {/* Presets Dropdown */}
+            <div className="col-span-2 space-y-1 pb-1 border-b border-[var(--border-subtle)]">
+              <label className="text-[9px] text-[var(--text-muted)] font-bold uppercase tracking-wider">Presets</label>
+              <select
+                value={selectedPresetName}
+                onChange={(e) => handleSelectPreset(e.target.value)}
+                className="w-full bg-[var(--bg-input)] border border-[var(--border-main)] rounded-md px-2 py-1.5 text-xs text-[var(--text-main)] focus:outline-hidden focus:border-purple-500/60 cursor-pointer"
+              >
+                <optgroup label="Standard Presets">
+                  {Object.keys(staticPresets).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </optgroup>
+                {customPresets.length > 0 && (
+                  <optgroup label="Custom Presets">
+                    {customPresets.map(preset => (
+                      <option key={preset.name} value={preset.name}>{preset.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
             <div>
               <label className="text-[10px] text-[var(--text-dim)] font-medium">Temperature</label>
               <input
@@ -296,6 +390,28 @@ export const VoicePanel: React.FC<VoicePanelProps> = ({
                 <option value="chatterbox-turbo">Chatterbox Turbo</option>
                 <option value="chatterbox-multilingual-v3">Chatterbox Multilingual V3</option>
               </select>
+            </div>
+
+            {/* Save Custom Preset Row */}
+            <div className="col-span-2 space-y-1 pt-1.5 border-t border-[var(--border-subtle)]">
+              <label className="text-[10px] text-[var(--text-dim)] font-medium">Save current settings as preset</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Preset name (e.g. My Style)"
+                  value={newPresetName}
+                  onChange={(e) => setNewPresetName(e.target.value)}
+                  className="flex-1 bg-[var(--bg-input)] border border-[var(--border-main)] rounded-md px-2.5 py-1 text-xs text-[var(--text-main)] focus:outline-hidden focus:border-purple-500/60"
+                />
+                <button
+                  type="button"
+                  onClick={handleSavePreset}
+                  disabled={!newPresetName.trim()}
+                  className="px-2.5 py-1 rounded bg-purple-600/90 hover:bg-purple-600 disabled:opacity-40 disabled:hover:bg-purple-600/90 text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         )}

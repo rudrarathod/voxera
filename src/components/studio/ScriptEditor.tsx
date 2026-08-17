@@ -85,6 +85,14 @@ export const ScriptEditor: React.FC<ScriptEditorProps> = ({
           ref={textareaRef}
           value={scriptText}
           onChange={(e) => setScriptText(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              if (!isDisableGenerate) {
+                onGenerate();
+              }
+            }
+          }}
           placeholder="Start typing or paste your script here…"
           className="w-full flex-1 resize-none bg-transparent text-sm text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden font-normal leading-relaxed selection:bg-purple-500/30 overflow-y-auto"
           spellCheck={false}

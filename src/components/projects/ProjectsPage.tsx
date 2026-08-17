@@ -1,29 +1,31 @@
 import React, { useState } from 'react';
 import { GenerationHistoryItem } from '../../types';
-import { Search, Trash2, FileAudio, LayoutGrid, ListFilter, ArrowUpDown } from 'lucide-react';
+import { Search, Trash2, FileAudio, LayoutGrid, ListFilter, Plus } from 'lucide-react';
 import { AudioEngine } from '../../utils/audioEngine';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RenameProjectModal } from '../studio/RenameProjectModal';
-import { HistoryProjectCard } from './HistoryProjectCard';
-import { HistoryVersionRow } from './HistoryVersionRow';
+import { ProjectCard } from './ProjectCard';
+import { ProjectVersionRow } from './ProjectVersionRow';
 import { isWithinPeriod } from '../../utils/timeFormat';
 
-interface HistoryPageProps {
+interface ProjectsPageProps {
   history: GenerationHistoryItem[];
   onLoadHistoryIntoStudio: (item: GenerationHistoryItem) => void;
   onShowToast: (title: string, description?: string, type?: 'success' | 'info' | 'error') => void;
   onDeleteHistoryItem: (id: string) => void;
   onClearHistory: () => void;
   onRenameHistoryItem: (id: string, newTitle: string) => void;
+  onCreateNewProject: () => void;
 }
 
-export const HistoryPage: React.FC<HistoryPageProps> = ({
+export const ProjectsPage: React.FC<ProjectsPageProps> = ({
   history,
   onLoadHistoryIntoStudio,
   onShowToast,
   onDeleteHistoryItem,
   onClearHistory,
   onRenameHistoryItem,
+  onCreateNewProject,
 }) => {
   const [search, setSearch] = useState('');
   const [filterPeriod, setFilterPeriod] = useState<'All' | 'Today' | 'This week' | 'This month'>('All');
@@ -96,8 +98,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
     return 0;
   });
 
-  // 4. Sort flat generations list
-  const sortedFlatGenerations = [...filtered].sort((a, b) => {
+  // 4. Sort flat generations list (filter out active drafts from flat files list)
+  const sortedFlatGenerations = filtered.filter(item => !item.id.startsWith('draft-')).sort((a, b) => {
     if (sortBy === 'Newest') {
       return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
     }
@@ -171,23 +173,34 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
       {/* Top Header Row */}
       <div className="pb-4 border-b border-[var(--border-subtle)] flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider">Generation History</h2>
+          <h2 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider">Projects Workspace</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Review, listen to, download, and restore past timelines grouped by project
+            Manage your creative audio projects and access historical timeline versions
           </p>
         </div>
 
-        {history.length > 0 && (
+        <div className="flex items-center gap-2.5">
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsConfirmClearOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/5 border border-transparent hover:border-red-500/10 transition-all cursor-pointer"
+              title="Delete all projects permanently"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Delete All</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => setIsConfirmClearOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/5 transition-all cursor-pointer"
-            title="Clear all generation history"
+            onClick={onCreateNewProject}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span className="hidden xs:inline">Clear History</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Project</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Filter, Sort, View Controls */}
@@ -263,7 +276,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
             <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search project, snippet, voice..."
+              placeholder="Search projects or logs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden focus:border-purple-500/60"
@@ -280,16 +293,16 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
               <FileAudio className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No Project History</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No Projects Found</h3>
               <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                No matching projects were found. Try modifying your filters or create a new audio clip in the studio.
+                Click "+ New Project" to create a fresh audio workspace in the studio.
               </p>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
             {sortedAndFilteredProjects.map((project) => (
-              <HistoryProjectCard
+              <ProjectCard
                 key={project.projectId}
                 projectId={project.projectId}
                 projectName={project.projectName}
@@ -313,16 +326,16 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
             <FileAudio className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No History Records</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">No Records</h3>
             <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-              No matching generations were found. Try modifying your filters or create a new audio clip in the studio.
+              No matching generated records were found in this workspace.
             </p>
           </div>
         </div>
       ) : (
         <div className="space-y-2.5">
           {sortedFlatGenerations.map((item) => (
-            <HistoryVersionRow
+            <ProjectVersionRow
               key={item.id}
               item={item}
               isPlaying={playingId === item.id}
@@ -358,10 +371,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
       {/* Delete Project Confirmation Dialog */}
       <ConfirmDialog
         isOpen={projectToDelete !== null}
-        title="Delete Project History"
+        title="Delete Project Workspace"
         description={`Are you sure you want to delete the project "${projectToDelete?.title}"? This will permanently remove all ${
           history.filter((item) => (item.projectId || `proj-legacy-${item.id}`) === projectToDelete?.projectId).length
-        } versions of this project. This action cannot be undone.`}
+        } versions. This action cannot be undone.`}
         confirmLabel="Delete Project"
         cancelLabel="Keep Project"
         isDanger={true}
@@ -378,13 +391,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         onCancel={() => setProjectToDelete(null)}
       />
 
-      {/* Clear All History Confirmation Dialog */}
+      {/* Clear All Projects Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isConfirmClearOpen}
-        title="Clear Generation History"
-        description="Are you sure you want to delete all generation records? This will permanently remove all audio clips and compositions from your history database. This action cannot be undone."
-        confirmLabel="Clear All Permanently"
-        cancelLabel="Keep History"
+        title="Delete All Projects"
+        description="Are you sure you want to delete all projects? This will permanently remove all audio clips and composition history from the database. This action cannot be undone."
+        confirmLabel="Delete All Permanently"
+        cancelLabel="Keep Projects"
         isDanger={true}
         onConfirm={() => {
           onClearHistory();

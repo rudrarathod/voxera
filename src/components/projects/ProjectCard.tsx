@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { GenerationHistoryItem } from '../../types';
 import { ChevronDown, ChevronUp, Folder, Pencil, Trash2, ArrowRight } from 'lucide-react';
-import { HistoryVersionRow } from './HistoryVersionRow';
+import { ProjectVersionRow } from './ProjectVersionRow';
 import { formatRelativeTime } from '../../utils/timeFormat';
 
-interface HistoryProjectCardProps {
+interface ProjectCardProps {
   projectId: string;
   projectName: string;
   versions: GenerationHistoryItem[];
@@ -19,7 +19,7 @@ interface HistoryProjectCardProps {
   onRenameProject: (item: GenerationHistoryItem) => void;
 }
 
-export const HistoryProjectCard: React.FC<HistoryProjectCardProps> = ({
+export const ProjectCard: React.FC<ProjectCardProps> = ({
   projectId,
   projectName,
   versions,
@@ -35,12 +35,16 @@ export const HistoryProjectCard: React.FC<HistoryProjectCardProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Sort versions: highest version number first (descending version order)
-  const sortedVersions = [...versions].sort((a, b) => (b.version || 0) - (a.version || 0));
+  // Sort versions: drafts first, then descending version numbers
+  const sortedVersions = [...versions].sort((a, b) => {
+    if (a.id.startsWith('draft-')) return -1;
+    if (b.id.startsWith('draft-')) return 1;
+    return (b.version || 0) - (a.version || 0);
+  });
   const latestItem = sortedVersions[0];
 
-  // Derive stats
-  const versionsCount = versions.length;
+  // Derive stats (versions count excludes active draft workspace)
+  const versionsCount = versions.filter(v => !v.id.startsWith('draft-')).length;
   const hasExport = versions.some((v) => v.generationType === 'master-export');
   
   // Total duration of latest item
@@ -147,7 +151,7 @@ export const HistoryProjectCard: React.FC<HistoryProjectCardProps> = ({
             <button
               type="button"
               onClick={() => onLoadIntoStudio(latestItem)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95 animate-in fade-in"
               title="Open the latest version in the Studio tab"
             >
               <span>Open Studio</span>
@@ -177,7 +181,7 @@ export const HistoryProjectCard: React.FC<HistoryProjectCardProps> = ({
             Generation History Versions
           </div>
           {sortedVersions.map((versionItem) => (
-            <HistoryVersionRow
+            <ProjectVersionRow
               key={versionItem.id}
               item={versionItem}
               isPlaying={playingId === versionItem.id}

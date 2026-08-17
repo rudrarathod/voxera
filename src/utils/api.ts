@@ -218,3 +218,12 @@ export async function denoiseAudio(baseUrl: string, audioFile: File): Promise<Bl
 
   return await response.blob();
 }
+
+/**
+ * Clears the client-side cache of uploaded reference voice IDs.
+ */
+export function clearReferenceCache(): void {
+  for (const key in referenceCache) {
+    delete referenceCache[key];
+  }
+}

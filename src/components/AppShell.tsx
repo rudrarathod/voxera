@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { AppTab, Voice, AudioSegment, GenerationHistoryItem, ToastMessage, NotificationItem } from '../types';
+import { AppTab, Voice, AudioSegment, GenerationHistoryItem, ToastMessage, NotificationItem, AdvancedVoiceSettings } from '../types';
 import { INITIAL_VOICES, INITIAL_SEGMENTS, INITIAL_HISTORY } from '../data/mockData';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { StudioPage } from './studio/StudioPage';
 import { VoiceLibrary } from './voices/VoiceLibrary';
 import { CreateVoicePage } from './voices/CreateVoicePage';
-import { HistoryPage } from './history/HistoryPage';
+import { ProjectsPage } from './projects/ProjectsPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { ConnectionModal } from './settings/ConnectionModal';
 import { ToastContainer } from './Toast';
-import { checkHealth, BackendHealth } from '../utils/api';
+import { checkHealth, BackendHealth, clearReferenceCache } from '../utils/api';
 import { VoxeraDB } from '../utils/db';
 
 export const AppShell: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AppTab>('studio');
+  const [activeTab, setActiveTab] = useState<AppTab>('projects');
   const [isOpenMobileSidebar, setIsOpenMobileSidebar] = useState(false);
 
   // Global State
@@ -22,10 +22,31 @@ export const AppShell: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState<Voice>(INITIAL_VOICES[0]);
   const [segments, setSegments] = useState<AudioSegment[]>(INITIAL_SEGMENTS);
   const [history, setHistory] = useState<GenerationHistoryItem[]>(INITIAL_HISTORY);
-  const [projectName, setProjectName] = useState('Untitled Composition');
-  const [currentProjectId, setCurrentProjectId] = useState<string>(() => `proj-${Date.now()}`);
+  const [projectName, setProjectName] = useState(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return localStorage.getItem('voxera_project_name') || 'Untitled Composition';
+    }
+    return 'Untitled Composition';
+  });
+  const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return localStorage.getItem('voxera_project_id') || `proj-${Date.now()}`;
+    }
+    return `proj-${Date.now()}`;
+  });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
+
+  // Lifted Project Settings States
+  const [language, setLanguage] = useState('English');
+  const [speed, setSpeed] = useState('1.0x');
+  const [exaggeration, setExaggeration] = useState('0.5');
+  const [advancedSettings, setAdvancedSettings] = useState<AdvancedVoiceSettings>({
+    temperature: 0.7,
+    cfgScale: 1.5,
+    seed: 429103,
+    model: 'chatterbox-turbo',
+  });
 
   // Backend Connection State
   const [backendUrl, setBackendUrl] = useState(() => {
@@ -125,6 +146,8 @@ export const AppShell: React.FC = () => {
           // Brand new session: Start with a clean slate in the studio workspace
           await VoxeraDB.saveSegments([]);
           setSegments([]);
+          setProjectName('Untitled Composition');
+          setCurrentProjectId(`proj-${Date.now()}`);
           if (typeof window !== 'undefined' && window.sessionStorage) {
             sessionStorage.setItem('voxera_session_active', 'true');
           }
@@ -132,6 +155,18 @@ export const AppShell: React.FC = () => {
 
         const savedHistory = await VoxeraDB.getAllHistory();
         setHistory(savedHistory);
+
+        // Restore settings for the active project on load if a draft exists
+        if (isContinuingSession) {
+          const activeProjectId = localStorage.getItem('voxera_project_id') || currentProjectId;
+          const activeDraft = savedHistory.find((item) => item.id === `draft-${activeProjectId}`);
+          if (activeDraft && activeDraft.projectSettings) {
+            setLanguage(activeDraft.projectSettings.language);
+            setSpeed(activeDraft.projectSettings.speed);
+            setExaggeration(activeDraft.projectSettings.exaggeration);
+            setAdvancedSettings(activeDraft.projectSettings.advancedSettings);
+          }
+        }
       } catch (err) {
         console.error('Failed to load data from IndexedDB:', err);
       } finally {
@@ -154,6 +189,110 @@ export const AppShell: React.FC = () => {
       localStorage.setItem('chatterbox_backend_url', backendUrl);
     }
   }, [backendUrl]);
+
+  // Save active project metadata to localStorage when changed
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('voxera_project_name', projectName);
+    }
+  }, [projectName]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('voxera_project_id', currentProjectId);
+    }
+  }, [currentProjectId]);
+
+  // Save active project draft to IndexedDB history store
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const saveDraft = async () => {
+      const draftId = `draft-${currentProjectId}`;
+      const scriptSnippet = segments.length > 0 ? segments[0].text : '';
+      const fullScript = segments.map((s) => s.text).join('\n');
+      const totalDuration = segments.reduce((sum, s) => sum + s.durationSec, 0);
+
+      const draftItem: GenerationHistoryItem = {
+        id: draftId,
+        projectId: currentProjectId,
+        title: projectName,
+        status: 'draft',
+        voiceId: selectedVoice.id,
+        voiceName: selectedVoice.name,
+        voicesSummary: Array.from(new Set(segments.map((s) => s.voiceName))).join(', ') || selectedVoice.name,
+        language: language,
+        duration: `${Math.round(totalDuration)}s`,
+        durationSec: totalDuration,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        segmentsCount: segments.length,
+        scriptSnippet: scriptSnippet.substring(0, 100),
+        fullScript: fullScript,
+        segments: segments,
+        version: 0,
+        projectSettings: {
+          language,
+          speed,
+          exaggeration,
+          advancedSettings,
+        },
+      };
+
+      // Save draft item in IndexedDB history store
+      await VoxeraDB.saveHistoryItem(draftItem);
+
+      // Refresh history state to update Projects tab
+      const savedHistory = await VoxeraDB.getAllHistory();
+      setHistory(savedHistory);
+    };
+
+    // Debounce to prevent database thrashing while editing/typing
+    const timer = setTimeout(saveDraft, 1000);
+    return () => clearTimeout(timer);
+  }, [
+    isInitialLoadDone,
+    currentProjectId,
+    projectName,
+    segments,
+    selectedVoice,
+    language,
+    speed,
+    exaggeration,
+    advancedSettings,
+  ]);
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.getAttribute('contenteditable') === 'true'
+      );
+
+      // Escape key to close Connection Modal
+      if (e.key === 'Escape') {
+        setIsOpenConnectionModal(false);
+      }
+
+      // Space key to play/pause (only outside inputs)
+      if (e.key === ' ' && !isInput) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('voxera-play-toggle'));
+      }
+
+      // Ctrl+S / Cmd+S to rename project
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('voxera-rename-trigger'));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Detect backend health status on initialization
   useEffect(() => {
@@ -266,6 +405,30 @@ export const AppShell: React.FC = () => {
 
   const handleNewProject = () => {
     setCurrentProjectId(`proj-${Date.now()}`);
+    setProjectName('Untitled Composition');
+    segments.forEach((seg) => {
+      if (seg.audioUrl) {
+        URL.revokeObjectURL(seg.audioUrl);
+      }
+    });
+    setSegments([]);
+    setLanguage('English');
+    setSpeed('1.0x');
+    setExaggeration('0.5');
+    setAdvancedSettings({
+      temperature: 0.7,
+      cfgScale: 1.5,
+      seed: 429103,
+      model: 'chatterbox-turbo',
+    });
+  };
+
+  const handleCreateNewProjectAndRedirect = () => {
+    handleNewProject();
+    setActiveTab('studio');
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('voxera-rename-trigger'));
+    }, 100);
   };
 
   const handleRenameHistoryItem = async (id: string, newTitle: string) => {
@@ -309,6 +472,13 @@ export const AppShell: React.FC = () => {
       setCurrentProjectId(item.projectId);
     } else {
       setCurrentProjectId(`proj-legacy-${item.id}`);
+    }
+
+    if (item.projectSettings) {
+      setLanguage(item.projectSettings.language);
+      setSpeed(item.projectSettings.speed);
+      setExaggeration(item.projectSettings.exaggeration);
+      setAdvancedSettings(item.projectSettings.advancedSettings);
     }
 
     if (item.segments && item.segments.length > 0) {
@@ -373,6 +543,51 @@ export const AppShell: React.FC = () => {
     await VoxeraDB.saveHistoryItem(itemCopy);
   };
 
+  const handleClearAudioCache = async () => {
+    // 1. Clear reference ID cache in API
+    clearReferenceCache();
+
+    // 2. Revoke active segment audio URLs
+    segments.forEach((seg) => {
+      if (seg.audioUrl) {
+        URL.revokeObjectURL(seg.audioUrl);
+      }
+    });
+
+    // 3. Clear segments in IndexedDB
+    await VoxeraDB.saveSegments([]);
+    setSegments([]);
+
+    // 4. Also revoke URLs in history list and delete audio blobs from history (leaving metadata)
+    const updatedHistory = history.map((item) => {
+      const copy = { ...item };
+      delete copy.audioBlob;
+      if (copy.segments) {
+        copy.segments = copy.segments.map((seg) => {
+          const segCopy = { ...seg };
+          delete segCopy.audioBlob;
+          if (segCopy.audioUrl) {
+            URL.revokeObjectURL(segCopy.audioUrl);
+          }
+          delete segCopy.audioUrl;
+          return segCopy;
+        });
+      }
+      return copy;
+    });
+    setHistory(updatedHistory);
+    // Save updated history items to IndexedDB
+    for (const item of updatedHistory) {
+      await VoxeraDB.saveHistoryItem(item);
+    }
+
+    handleShowToast(
+      'Audio cache cleared',
+      'All temporary segments, voice cache, and history audio files have been deleted.',
+      'success'
+    );
+  };
+
   return (
     <div className="h-screen bg-[var(--bg-app)] text-[var(--text-main)] flex flex-col font-sans selection:bg-purple-500/30 overflow-hidden">
       {/* Fixed Sidebar */}
@@ -415,6 +630,14 @@ export const AppShell: React.FC = () => {
               onRenameProject={setProjectName}
               currentProjectId={currentProjectId}
               onNewProject={handleNewProject}
+              language={language}
+              setLanguage={setLanguage}
+              speed={speed}
+              setSpeed={setSpeed}
+              exaggeration={exaggeration}
+              setExaggeration={setExaggeration}
+              advancedSettings={advancedSettings}
+              setAdvancedSettings={setAdvancedSettings}
             />
           )}
 
@@ -442,14 +665,15 @@ export const AppShell: React.FC = () => {
             />
           )}
 
-          {activeTab === 'history' && (
-            <HistoryPage
+          {activeTab === 'projects' && (
+            <ProjectsPage
               history={history}
               onLoadHistoryIntoStudio={handleLoadHistoryIntoStudio}
               onShowToast={handleShowToast}
               onDeleteHistoryItem={handleDeleteHistoryItem}
               onClearHistory={handleClearHistory}
               onRenameHistoryItem={handleRenameHistoryItem}
+              onCreateNewProject={handleCreateNewProjectAndRedirect}
             />
           )}
 
@@ -464,6 +688,7 @@ export const AppShell: React.FC = () => {
               setBackendInfo={setBackendInfo}
               appearance={appearance}
               setAppearance={setAppearance}
+              onClearAudioCache={handleClearAudioCache}
             />
           )}
         </main>

@@ -1,4 +1,4 @@
-export type AppTab = 'studio' | 'voices' | 'create-voice' | 'history' | 'settings';
+export type AppTab = 'studio' | 'voices' | 'create-voice' | 'projects' | 'settings';
 
 export interface Voice {
   id: string;
@@ -35,6 +35,13 @@ export interface AudioSegment {
   audioBlob?: Blob;
 }
 
+export interface ProjectSettings {
+  language: string;
+  speed: string;
+  exaggeration: string;
+  advancedSettings: AdvancedVoiceSettings;
+}
+
 export interface GenerationHistoryItem {
   id: string;
   projectId?: string;                    // Grouping ID
@@ -57,6 +64,7 @@ export interface GenerationHistoryItem {
   segments?: AudioSegment[];
   generationType?: 'segment' | 'regeneration' | 'master-export';
   version?: number;
+  projectSettings?: ProjectSettings;
 }
 
 export interface AdvancedVoiceSettings {

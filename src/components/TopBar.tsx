@@ -70,9 +70,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       title: 'Create voice',
       subtitle: 'Create a reusable voice from a reference recording',
     },
-    history: {
-      title: 'History',
-      subtitle: 'View and manage past speech generations',
+    projects: {
+      title: 'Projects',
+      subtitle: 'View and manage your audio projects',
     },
     settings: {
       title: 'Settings',

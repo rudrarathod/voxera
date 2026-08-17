@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Cpu, Volume2, Moon, RefreshCw, CheckCircle2, AlertCircle, Clipboard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Cpu, Volume2, Moon, RefreshCw, CheckCircle2, AlertCircle, Clipboard, Database } from 'lucide-react';
 import { checkHealth, BackendHealth } from '../../utils/api';
 
 interface SettingsPageProps {
@@ -12,6 +12,7 @@ interface SettingsPageProps {
   setBackendInfo: (info: BackendHealth | null) => void;
   appearance: 'Light' | 'Dark' | 'System';
   setAppearance: (appearance: 'Light' | 'Dark' | 'System') => void;
+  onClearAudioCache: () => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
@@ -24,10 +25,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   setBackendInfo,
   appearance,
   setAppearance,
+  onClearAudioCache,
 }) => {
   const [audioFormat, setAudioFormat] = useState('WAV (24kHz 16-bit)');
   const [sampleRate, setSampleRate] = useState('24000');
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [storageUsed, setStorageUsed] = useState<string>('Calculating...');
+
+  const updateStorageEstimate = async () => {
+    if (typeof window !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        const usageBytes = estimate.usage || 0;
+        if (usageBytes < 1024) {
+          setStorageUsed(`${usageBytes} B`);
+        } else if (usageBytes < 1024 * 1024) {
+          setStorageUsed(`${(usageBytes / 1024).toFixed(1)} KB`);
+        } else {
+          setStorageUsed(`${(usageBytes / (1024 * 1024)).toFixed(1)} MB`);
+        }
+      } catch {
+        setStorageUsed('Unknown');
+      }
+    } else {
+      setStorageUsed('Not supported');
+    }
+  };
+
+  useEffect(() => {
+    updateStorageEstimate();
+  }, []);
+
+  const handleClearCache = async () => {
+    await onClearAudioCache();
+    await updateStorageEstimate();
+  };
 
   const handleTestConnection = async () => {
     setIsTestingConnection(true);
@@ -196,6 +228,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <option value="48000">48,000 Hz (Broadcast)</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Storage & Cache */}
+        <div className="bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-purple-500" />
+              <h3 className="text-xs font-semibold text-[var(--text-main)] uppercase tracking-wider">
+                Storage & Cache
+              </h3>
+            </div>
+            <div className="px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-400 text-[10px] font-mono font-medium">
+              IndexedDB
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h4 className="text-xs font-semibold text-[var(--text-main)]">Local Audio Generation Cache</h4>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                Estimated browser storage used by temporary composition segments, custom voice model data, and history audio logs.
+              </p>
+              <div className="text-[11px] text-[var(--text-dim)] pt-0.5">
+                Current usage: <span className="font-mono text-[var(--text-main)] font-semibold">{storageUsed}</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearCache}
+              className="shrink-0 px-3 py-2 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              Clear Cache
+            </button>
           </div>
         </div>
 

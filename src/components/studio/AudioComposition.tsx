@@ -489,6 +489,15 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     }
   }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, segments, playDraftPreview]);
 
+  // Handle global play/pause toggle keyboard shortcut (Space)
+  useEffect(() => {
+    const handleToggle = () => {
+      handleTogglePlay();
+    };
+    window.addEventListener('voxera-play-toggle', handleToggle);
+    return () => window.removeEventListener('voxera-play-toggle', handleToggle);
+  }, [handleTogglePlay]);
+
   // Seek to segment start
   const handleSeekToSegment = useCallback((segId: string) => {
     const ws = wavesurferRef.current;

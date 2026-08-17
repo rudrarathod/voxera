@@ -78,6 +78,14 @@ interface StudioPageProps {
   onRenameProject: (name: string) => void;
   currentProjectId: string;
   onNewProject: () => void;
+  language: string;
+  setLanguage: (lang: string) => void;
+  speed: string;
+  setSpeed: (sp: string) => void;
+  exaggeration: string;
+  setExaggeration: (ex: string) => void;
+  advancedSettings: AdvancedVoiceSettings;
+  setAdvancedSettings: React.Dispatch<React.SetStateAction<AdvancedVoiceSettings>>;
 }
 
 export const StudioPage: React.FC<StudioPageProps> = ({
@@ -96,6 +104,14 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   onRenameProject,
   currentProjectId,
   onNewProject,
+  language,
+  setLanguage,
+  speed,
+  setSpeed,
+  exaggeration,
+  setExaggeration,
+  advancedSettings,
+  setAdvancedSettings,
 }) => {
   const [scriptText, setScriptText] = useState(
     'Welcome to Voxera. This is a test of the AI voice studio.'
@@ -112,17 +128,6 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   } | null>(null);
   const [isScriptExpanded, setIsScriptExpanded] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'voice'>('editor');
-
-  // Controls
-  const [language, setLanguage] = useState('English');
-  const [speed, setSpeed] = useState('1.0x');
-  const [exaggeration, setExaggeration] = useState('0.5');
-  const [advancedSettings, setAdvancedSettings] = useState<AdvancedVoiceSettings>({
-    temperature: 0.7,
-    cfgScale: 1.5,
-    seed: 429103,
-    model: 'chatterbox-turbo',
-  });
 
   // Timeline Selection & Playback State
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
@@ -151,6 +156,15 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     }
     return undefined;
   };
+
+  // Handle global project rename shortcut (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleRenameTrigger = () => {
+      setIsRenameOpen(true);
+    };
+    window.addEventListener('voxera-rename-trigger', handleRenameTrigger);
+    return () => window.removeEventListener('voxera-rename-trigger', handleRenameTrigger);
+  }, []);
 
   // Sync Script Editor and Voice Panel when selectedSegmentId changes
   useEffect(() => {

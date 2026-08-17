@@ -1,9 +1,9 @@
 import React from 'react';
 import { GenerationHistoryItem } from '../../types';
-import { Play, Pause, Download, Trash2, ArrowRight, Copy, Check } from 'lucide-react';
+import { Play, Pause, Download, Trash2, ArrowRight, Copy, Check, FileEdit } from 'lucide-react';
 import { formatRelativeTime } from '../../utils/timeFormat';
 
-interface HistoryVersionRowProps {
+interface ProjectVersionRowProps {
   item: GenerationHistoryItem;
   isPlaying: boolean;
   copiedId: string | null;
@@ -14,7 +14,7 @@ interface HistoryVersionRowProps {
   onDelete: (item: GenerationHistoryItem, e: React.MouseEvent) => void;
 }
 
-export const HistoryVersionRow: React.FC<HistoryVersionRowProps> = ({
+export const ProjectVersionRow: React.FC<ProjectVersionRowProps> = ({
   item,
   isPlaying,
   copiedId,
@@ -24,7 +24,17 @@ export const HistoryVersionRow: React.FC<HistoryVersionRowProps> = ({
   onLoadIntoStudio,
   onDelete,
 }) => {
+  const isDraft = item.id.startsWith('draft-');
+
   const getGenerationTypeBadge = () => {
+    if (isDraft) {
+      return (
+        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+          Workspace Draft
+        </span>
+      );
+    }
+
     switch (item.generationType) {
       case 'master-export':
         return (
@@ -51,32 +61,38 @@ export const HistoryVersionRow: React.FC<HistoryVersionRowProps> = ({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[var(--bg-inner)] border border-[var(--border-subtle)] hover:border-purple-500/20 rounded-lg transition-all text-xs group/row">
       <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-        {/* Play Button */}
-        <button
-          type="button"
-          onClick={(e) => onTogglePlay(item, e)}
-          className={`p-1.5 rounded-full transition-all shrink-0 cursor-pointer shadow-xs active:scale-95 ${
-            isPlaying
-              ? 'bg-purple-600 text-white shadow-purple-500/20'
-              : 'bg-[var(--bg-card)] hover:bg-[var(--bg-panel)] border border-[var(--border-main)] text-[var(--text-main)]'
-          }`}
-        >
-          {isPlaying ? (
-            <Pause className="w-3.5 h-3.5" />
-          ) : (
-            <Play className="w-3.5 h-3.5 ml-0.5" />
-          )}
-        </button>
+        {/* Play/Draft Indicator Button */}
+        {isDraft ? (
+          <div className="p-1.5 rounded-full bg-purple-600/10 text-purple-400 border border-purple-500/20 shrink-0">
+            <FileEdit className="w-3.5 h-3.5" />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => onTogglePlay(item, e)}
+            className={`p-1.5 rounded-full transition-all shrink-0 cursor-pointer shadow-xs active:scale-95 ${
+              isPlaying
+                ? 'bg-purple-600 text-white shadow-purple-500/20'
+                : 'bg-[var(--bg-card)] hover:bg-[var(--bg-panel)] border border-[var(--border-main)] text-[var(--text-main)]'
+            }`}
+          >
+            {isPlaying ? (
+              <Pause className="w-3.5 h-3.5" />
+            ) : (
+              <Play className="w-3.5 h-3.5 ml-0.5" />
+            )}
+          </button>
+        )}
 
         {/* Details */}
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-[var(--text-main)] font-mono">
-              V{item.version || 1}
+              {isDraft ? 'DRAFT' : `V${item.version || 1}`}
             </span>
             {getGenerationTypeBadge()}
             <span className="text-[10px] font-medium text-[var(--text-muted)] font-mono">
-              {item.durationSec > 0 ? `${item.durationSec.toFixed(1)}s` : item.duration}
+              {isDraft ? `${item.segmentsCount || 0} segment${(item.segmentsCount || 0) === 1 ? '' : 's'}` : (item.durationSec > 0 ? `${item.durationSec.toFixed(1)}s` : item.duration)}
             </span>
             <span className="text-[10px] text-[var(--text-dim)] font-mono">
               {formatRelativeTime(item.createdAt)}
@@ -86,7 +102,7 @@ export const HistoryVersionRow: React.FC<HistoryVersionRowProps> = ({
           {/* Snippet */}
           <div className="relative group/snippet max-w-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] rounded px-2 py-1 flex items-center justify-between gap-2">
             <p className="text-[10px] text-[var(--text-muted)] italic truncate flex-1">
-              "{item.scriptSnippet}"
+              "{item.scriptSnippet || 'No script text entered yet.'}"
             </p>
             <button
               type="button"
@@ -122,20 +138,22 @@ export const HistoryVersionRow: React.FC<HistoryVersionRowProps> = ({
             <ArrowRight className="w-3 h-3" />
           </button>
 
-          <button
-            type="button"
-            onClick={(e) => onDownload(item, e)}
-            className="p-1.5 rounded bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
-            title="Download WAV file"
-          >
-            <Download className="w-3 h-3" />
-          </button>
+          {!isDraft && (
+            <button
+              type="button"
+              onClick={(e) => onDownload(item, e)}
+              className="p-1.5 rounded bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+              title="Download WAV file"
+            >
+              <Download className="w-3 h-3" />
+            </button>
+          )}
 
           <button
             type="button"
             onClick={(e) => onDelete(item, e)}
             className="p-1.5 rounded bg-[var(--bg-card)] hover:bg-red-500/10 border border-[var(--border-main)] hover:border-red-500/30 text-[var(--text-muted)] hover:text-red-500 cursor-pointer"
-            title="Delete this version"
+            title={isDraft ? "Delete draft workspace" : "Delete this version"}
           >
             <Trash2 className="w-3 h-3" />
           </button>
