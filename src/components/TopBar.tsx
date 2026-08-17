@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppTab, NotificationItem } from '../types';
-import { Settings, Menu, Sun, Moon, Link2, Bell, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { Settings, Menu, Sun, Moon, Laptop, Link2, Bell, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 interface TopBarProps {
   activeTab: AppTab;
@@ -50,8 +50,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, [appearance]);
 
   const toggleTheme = () => {
-    if (isLightMode) {
+    if (appearance === 'Light') {
       setAppearance('Dark');
+    } else if (appearance === 'Dark') {
+      setAppearance('System');
     } else {
       setAppearance('Light');
     }
@@ -130,10 +132,18 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={toggleTheme}
           className="p-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-[var(--border-card)] transition-colors"
-          title={isLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          title={
+            appearance === 'Light'
+              ? 'Theme: Light (Switch to Dark)'
+              : appearance === 'Dark'
+              ? 'Theme: Dark (Switch to System)'
+              : 'Theme: System (Switch to Light)'
+          }
           aria-label="Toggle Theme"
         >
-          {isLightMode ? <Moon className="w-4 h-4 text-purple-600" /> : <Sun className="w-4 h-4 text-amber-500" />}
+          {appearance === 'Light' && <Sun className="w-4 h-4 text-amber-500" />}
+          {appearance === 'Dark' && <Moon className="w-4 h-4 text-purple-600" />}
+          {appearance === 'System' && <Laptop className="w-4 h-4 text-purple-600" />}
         </button>
 
         {/* Notification Bell with Dropdown */}

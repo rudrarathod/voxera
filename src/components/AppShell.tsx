@@ -320,6 +320,11 @@ export const AppShell: React.FC = () => {
   // Session Notification History
   const [notificationHistory, setNotificationHistory] = useState<NotificationItem[]>(() => {
     if (typeof window !== 'undefined' && window.sessionStorage) {
+      const isContinuing = sessionStorage.getItem('voxera_session_active') === 'true';
+      if (!isContinuing) {
+        sessionStorage.removeItem('voxera_notification_history');
+        return [];
+      }
       try {
         const saved = sessionStorage.getItem('voxera_notification_history');
         return saved ? JSON.parse(saved) : [];

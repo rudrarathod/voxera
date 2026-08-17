@@ -10,11 +10,11 @@ interface ToastProps {
 export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
 
-  // Show only the 3 most recent toasts, with the newest appearing at the top
-  const visibleToasts = toasts.slice(-3).reverse();
+  // Show only the 3 most recent toasts, with the newest appearing at the bottom
+  const visibleToasts = toasts.slice(-3);
 
   return (
-    <div className="fixed top-20 right-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {visibleToasts.map((toast) => {
         const isSuccess = toast.type === 'success' || !toast.type;
         const isError = toast.type === 'error';
@@ -22,7 +22,7 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
         return (
           <div
             key={toast.id}
-            className="pointer-events-auto flex items-start gap-3 p-3.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-main)] text-[var(--text-main)] shadow-xl animate-in fade-in slide-in-from-top-3 duration-200"
+            className="pointer-events-auto flex items-start gap-3 p-3.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-main)] text-[var(--text-main)] shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200"
           >
             {isSuccess && <CheckCircle2 className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />}
             {isError && <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />}
