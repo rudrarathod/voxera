@@ -72,3 +72,11 @@ export interface ToastMessage {
   description?: string;
   type?: 'success' | 'info' | 'error';
 }
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  description?: string;
+  type: 'success' | 'info' | 'error';
+  timestamp: string;
+}

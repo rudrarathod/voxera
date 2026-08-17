@@ -2,32 +2,6 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
-    --bg-app: #0a0a0c;
-    --bg-sidebar: #0c0c0e;
-    --bg-topbar: rgba(10, 10, 12, 0.85);
-    --bg-panel: #111115;
-    --bg-card: #16161b;
-    --bg-inner: #0e0e11;
-    --bg-input: #16161c;
-    --border-subtle: #181820;
-    --border-main: #1e1e26;
-    --border-card: #23232e;
-    --text-main: #f4f4f5;
-    --text-muted: #a1a1aa;
-    --text-dim: #71717a;
-    --nav-hover: #16161c;
-    --nav-active-bg: #181820;
-    --nav-active-border: #2a2a36;
-    --nav-active-text: #ffffff;
-    --accent-purple-bg: rgba(139, 92, 246, 0.15);
-    --accent-purple-border: rgba(139, 92, 246, 0.35);
-    --accent-purple-text: #c084fc;
-    --waveform-track-bg: #14141a;
-    --waveform-segment-bg: #181822;
-  }
-
-  html.light, .light {
     color-scheme: light;
     --bg-app: #f1f5f9;
     --bg-sidebar: #ffffff;
@@ -51,6 +25,32 @@
     --accent-purple-text: #6b21a8;
     --waveform-track-bg: #f1f5f9;
     --waveform-segment-bg: #ffffff;
+  }
+
+  html.dark, .dark {
+    color-scheme: dark;
+    --bg-app: #0a0a0c;
+    --bg-sidebar: #0c0c0e;
+    --bg-topbar: rgba(10, 10, 12, 0.85);
+    --bg-panel: #111115;
+    --bg-card: #16161b;
+    --bg-inner: #0e0e11;
+    --bg-input: #16161c;
+    --border-subtle: #181820;
+    --border-main: #1e1e26;
+    --border-card: #23232e;
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --nav-hover: #16161c;
+    --nav-active-bg: #181820;
+    --nav-active-border: #2a2a36;
+    --nav-active-text: #ffffff;
+    --accent-purple-bg: rgba(139, 92, 246, 0.15);
+    --accent-purple-border: rgba(139, 92, 246, 0.35);
+    --accent-purple-text: #c084fc;
+    --waveform-track-bg: #14141a;
+    --waveform-segment-bg: #181822;
   }
 
   body {

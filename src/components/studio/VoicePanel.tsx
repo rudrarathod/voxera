@@ -31,7 +31,7 @@ export const VoicePanel: React.FC<VoicePanelProps> = ({
   selectedSegmentNumber,
 }) => {
   const [isPlayingReference, setIsPlayingReference] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);
 
   const handleToggleReference = () => {
     if (isPlayingReference) {

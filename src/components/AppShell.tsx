@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppTab, Voice, AudioSegment, GenerationHistoryItem, ToastMessage } from '../types';
+import { AppTab, Voice, AudioSegment, GenerationHistoryItem, ToastMessage, NotificationItem } from '../types';
 import { INITIAL_VOICES, INITIAL_SEGMENTS, INITIAL_HISTORY } from '../data/mockData';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -38,6 +38,61 @@ export const AppShell: React.FC = () => {
   const [backendInfo, setBackendInfo] = useState<BackendHealth | null>(null);
   const [isOpenConnectionModal, setIsOpenConnectionModal] = useState(false);
 
+  // Appearance / Theme State (Default to Light theme)
+  const [appearance, setAppearance] = useState<'Light' | 'Dark' | 'System'>(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return (localStorage.getItem('voxera_appearance') as 'Light' | 'Dark' | 'System') || 'Light';
+    }
+    return 'Light';
+  });
+
+  // Apply appearance theme classes to document element
+  useEffect(() => {
+    const applyTheme = (theme: 'Light' | 'Dark' | 'System') => {
+      const root = document.documentElement;
+      if (theme === 'Light') {
+        root.classList.add('light');
+        root.classList.remove('dark');
+      } else if (theme === 'Dark') {
+        root.classList.add('dark');
+        root.classList.remove('light');
+      } else {
+        // System Theme (Sync with OS setting)
+        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (systemPrefersDark) {
+          root.classList.add('dark');
+          root.classList.remove('light');
+        } else {
+          root.classList.add('light');
+          root.classList.remove('dark');
+        }
+      }
+    };
+
+    applyTheme(appearance);
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('voxera_appearance', appearance);
+    }
+
+    if (appearance === 'System') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleSystemThemeChange = (e: MediaQueryListEvent) => {
+        const root = document.documentElement;
+        if (e.matches) {
+          root.classList.add('dark');
+          root.classList.remove('light');
+        } else {
+          root.classList.add('light');
+          root.classList.remove('dark');
+        }
+      };
+      
+      mediaQuery.addEventListener('change', handleSystemThemeChange);
+      return () => mediaQuery.removeEventListener('change', handleSystemThemeChange);
+    }
+  }, [appearance]);
+
   // Load initial data from IndexedDB on startup
   useEffect(() => {
     const loadIndexedDBData = async () => {
@@ -47,18 +102,32 @@ export const AppShell: React.FC = () => {
           setVoices([...INITIAL_VOICES, ...savedVoices]);
         }
 
-        const savedSegments = await VoxeraDB.getAllSegments();
-        if (savedSegments.length > 0) {
-          const reconstructed = savedSegments.map((seg) => {
-            if (seg.audioBlob) {
-              return {
-                ...seg,
-                audioUrl: URL.createObjectURL(seg.audioBlob),
-              };
-            }
-            return seg;
-          });
-          setSegments(reconstructed);
+        // Check if this is a continuing session (e.g., page reload inside the same tab)
+        const isContinuingSession = typeof window !== 'undefined' && 
+                                    window.sessionStorage && 
+                                    sessionStorage.getItem('voxera_session_active') === 'true';
+
+        if (isContinuingSession) {
+          const savedSegments = await VoxeraDB.getAllSegments();
+          if (savedSegments.length > 0) {
+            const reconstructed = savedSegments.map((seg) => {
+              if (seg.audioBlob) {
+                return {
+                  ...seg,
+                  audioUrl: URL.createObjectURL(seg.audioBlob),
+                };
+              }
+              return seg;
+            });
+            setSegments(reconstructed);
+          }
+        } else {
+          // Brand new session: Start with a clean slate in the studio workspace
+          await VoxeraDB.saveSegments([]);
+          setSegments([]);
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem('voxera_session_active', 'true');
+          }
         }
 
         const savedHistory = await VoxeraDB.getAllHistory();
@@ -109,22 +178,58 @@ export const AppShell: React.FC = () => {
     initHealthCheck();
   }, []);
 
+  // Session Notification History
+  const [notificationHistory, setNotificationHistory] = useState<NotificationItem[]>(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const saved = sessionStorage.getItem('voxera_notification_history');
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // Save notification history to sessionStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      sessionStorage.setItem('voxera_notification_history', JSON.stringify(notificationHistory));
+    }
+  }, [notificationHistory]);
+
+  const handleClearNotificationHistory = () => {
+    setNotificationHistory([]);
+  };
+
   // Toast Helper
   const handleShowToast = (
     title: string,
     description?: string,
     type: 'success' | 'info' | 'error' = 'success'
   ) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newToast: ToastMessage = {
-      id: `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id,
       title,
       description,
       type,
     };
     setToasts((prev) => [...prev, newToast]);
 
+    // Add to session notification history
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const newHistoryItem: NotificationItem = {
+      id,
+      title,
+      description,
+      type,
+      timestamp,
+    };
+    setNotificationHistory((prev) => [newHistoryItem, ...prev]);
+
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
   };
 
@@ -286,6 +391,10 @@ export const AppShell: React.FC = () => {
           onOpenMobileSidebar={() => setIsOpenMobileSidebar(true)}
           isBackendConnected={isBackendConnected}
           onOpenConnectionModal={() => setIsOpenConnectionModal(true)}
+          appearance={appearance}
+          setAppearance={setAppearance}
+          notificationHistory={notificationHistory}
+          onClearNotificationHistory={handleClearNotificationHistory}
         />
 
         <main className={`flex-1 flex flex-col min-h-0 ${activeTab === 'studio' ? 'overflow-hidden pb-0' : 'overflow-y-auto pb-16'}`}>
@@ -353,6 +462,8 @@ export const AppShell: React.FC = () => {
               setIsBackendConnected={setIsBackendConnected}
               backendInfo={backendInfo}
               setBackendInfo={setBackendInfo}
+              appearance={appearance}
+              setAppearance={setAppearance}
             />
           )}
         </main>

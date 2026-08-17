@@ -10,6 +10,8 @@ interface SettingsPageProps {
   setIsBackendConnected: (connected: boolean) => void;
   backendInfo: BackendHealth | null;
   setBackendInfo: (info: BackendHealth | null) => void;
+  appearance: 'Light' | 'Dark' | 'System';
+  setAppearance: (appearance: 'Light' | 'Dark' | 'System') => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
@@ -20,8 +22,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   setIsBackendConnected,
   backendInfo,
   setBackendInfo,
+  appearance,
+  setAppearance,
 }) => {
-  const [appearance, setAppearance] = useState<'Dark' | 'Light' | 'System'>('Dark');
   const [audioFormat, setAudioFormat] = useState('WAV (24kHz 16-bit)');
   const [sampleRate, setSampleRate] = useState('24000');
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -146,22 +149,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 type="button"
                 onClick={() => {
                   setAppearance(mode);
-                  if (mode === 'Light') {
-                    document.documentElement.classList.add('light');
-                    document.documentElement.classList.remove('dark');
-                  } else if (mode === 'Dark') {
-                    document.documentElement.classList.remove('light');
-                    document.documentElement.classList.add('dark');
-                  } else {
-                    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    if (systemPrefersDark) {
-                      document.documentElement.classList.remove('light');
-                      document.documentElement.classList.add('dark');
-                    } else {
-                      document.documentElement.classList.add('light');
-                      document.documentElement.classList.remove('dark');
-                    }
-                  }
                   onShowToast(`Theme updated to ${mode}`, undefined, 'info');
                 }}
                 className={`p-2.5 rounded-lg border text-xs font-medium transition-all text-center cursor-pointer ${

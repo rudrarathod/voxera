@@ -1017,22 +1017,20 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   return (
     <div className="p-0 flex-1 flex flex-col w-full min-h-0 overflow-hidden">
       {!isBackendConnected && (
-        <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0 animate-in fade-in duration-200">
-          <div className="flex items-center gap-2 text-xs font-semibold text-red-400">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-            </span>
-            <span>Inference Backend is Offline. Generation is disabled.</span>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenConnectionModal}
-            className="px-3 py-1 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 text-xs font-semibold cursor-pointer transition-colors"
-          >
-            Connect Backend API
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onOpenConnectionModal}
+          className="bg-red-500/5 hover:bg-red-500/10 border-b border-red-500/10 px-6 py-1.5 flex items-center justify-center gap-2 shrink-0 transition-all cursor-pointer w-full animate-in fade-in duration-200 border-t-0 border-x-0 outline-none"
+          title="Click to connect backend API"
+        >
+          <span className="flex h-1.5 w-1.5 relative shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-60"></span>
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+          </span>
+          <span className="text-[10px] font-bold text-red-400/90 tracking-wider uppercase">
+            Inference Backend Offline (Generation Disabled) • Click to Connect
+          </span>
+        </button>
       )}
 
       {/* Top Header/Toolbar */}
