@@ -11,6 +11,7 @@ import { Sparkles, Trash2, Plus, Pencil } from 'lucide-react';
 import { SplitConfirmModal } from './SplitConfirmModal';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RenameProjectModal } from './RenameProjectModal';
+import { VoxeraDB } from '../../utils/db';
 
 const splitTextIntoChunks = (input: string, maxChars: number = 400): string[] => {
   if (!input.trim()) return [];
@@ -86,6 +87,7 @@ interface StudioPageProps {
   setExaggeration: (ex: string) => void;
   advancedSettings: AdvancedVoiceSettings;
   setAdvancedSettings: React.Dispatch<React.SetStateAction<AdvancedVoiceSettings>>;
+  setVoices?: React.Dispatch<React.SetStateAction<Voice[]>>;
 }
 
 export const StudioPage: React.FC<StudioPageProps> = ({
@@ -112,6 +114,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   setExaggeration,
   advancedSettings,
   setAdvancedSettings,
+  setVoices,
 }) => {
   const [scriptText, setScriptText] = useState(
     'Welcome to Voxera. This is a test of the AI voice studio.'
@@ -1078,6 +1081,192 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     onShowToast('Timeline cleared', 'Timeline cleared. Enter a name for your new project.', 'info');
   };
 
+  const handleExportProject = async () => {
+    onShowToast('Exporting Project', 'Preparing project export package...', 'info');
+    try {
+      const fileToBase64 = (blobOrFile: Blob | File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blobOrFile);
+        });
+      };
+
+      // 1. Process custom voices (reference files)
+      const serializedVoices = await Promise.all(
+        voices.map(async (v) => {
+          let referenceFileBase64 = null;
+          if (v.category === 'Custom' && v.referenceFileObject) {
+            try {
+              referenceFileBase64 = await fileToBase64(v.referenceFileObject);
+            } catch (err) {
+              console.warn(`Failed to serialize reference file for voice ${v.name}:`, err);
+            }
+          }
+          return {
+            ...v,
+            referenceFileBase64,
+          };
+        })
+      );
+
+      // 2. Process segment audio blobs
+      const serializedSegments = await Promise.all(
+        segments.map(async (seg) => {
+          let audioBlobBase64 = null;
+          if (seg.audioBlob) {
+            try {
+              audioBlobBase64 = await fileToBase64(seg.audioBlob);
+            } catch (err) {
+              console.warn(`Failed to serialize audio blob for segment S0${seg.segmentNumber}:`, err);
+            }
+          } else if (seg.audioUrl) {
+            try {
+              const res = await fetch(seg.audioUrl);
+              if (res.ok) {
+                const blob = await res.blob();
+                audioBlobBase64 = await fileToBase64(blob);
+              }
+            } catch (err) {
+              console.warn(`Failed to fetch and serialize audio URL for segment S0${seg.segmentNumber}:`, err);
+            }
+          }
+          return {
+            ...seg,
+            audioBlobBase64,
+          };
+        })
+      );
+
+      // 3. Compile project export bundle
+      const exportBundle = {
+        voxeraVersion: '1.0',
+        projectName,
+        projectId: currentProjectId,
+        language,
+        speed,
+        exaggeration,
+        advancedSettings,
+        segments: serializedSegments,
+        voices: serializedVoices,
+      };
+
+      const jsonStr = JSON.stringify(exportBundle, null, 2);
+      const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
+      const jsonUrl = URL.createObjectURL(jsonBlob);
+
+      const cleanProjectName = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      const downloadName = `voxera_project_${cleanProjectName}.json`;
+
+      const a = document.createElement('a');
+      a.href = jsonUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(jsonUrl);
+
+      onShowToast('Project Exported!', `Saved project configuration & voice references to ${downloadName}`, 'success');
+    } catch (err: any) {
+      console.error('Failed to export project:', err);
+      onShowToast('Export Failed', 'An error occurred while compiling the project package.', 'error');
+    }
+  };
+
+  const handleImportProject = async (file: File) => {
+    onShowToast('Importing Project', `Reading project file: ${file.name}...`, 'info');
+    try {
+      const text = await file.text();
+      const bundle = JSON.parse(text);
+
+      if (bundle.voxeraVersion !== '1.0' && !bundle.projectName) {
+        throw new Error('Invalid project file format.');
+      }
+
+      const base64ToBlob = (dataUrl: string): Blob => {
+        const arr = dataUrl.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'audio/wav';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+      };
+
+      const base64ToFile = (dataUrl: string, filename: string): File => {
+        const blob = base64ToBlob(dataUrl);
+        return new File([blob], filename, { type: blob.type });
+      };
+
+      // 1. Restore settings
+      if (bundle.projectName) onRenameProject(bundle.projectName);
+      if (bundle.language) setLanguage(bundle.language);
+      if (bundle.speed) setSpeed(bundle.speed);
+      if (bundle.exaggeration) setExaggeration(bundle.exaggeration);
+      if (bundle.advancedSettings) setAdvancedSettings(bundle.advancedSettings);
+
+      // 2. Restore custom voices and inject into global voices list
+      if (bundle.voices && Array.isArray(bundle.voices) && setVoices) {
+        const newVoicesToAdd: Voice[] = [];
+        for (const v of bundle.voices) {
+          if (v.category === 'Custom') {
+            const existingVoice = voices.find(existing => existing.id === v.id);
+            let restoredVoice = { ...v };
+            delete restoredVoice.referenceFileBase64;
+
+            if (v.referenceFileBase64 && v.referenceFile?.name) {
+              restoredVoice.referenceFileObject = base64ToFile(v.referenceFileBase64, v.referenceFile.name);
+            }
+
+            // Save to IndexedDB database
+            await VoxeraDB.saveVoice(restoredVoice);
+
+            if (!existingVoice) {
+              newVoicesToAdd.push(restoredVoice);
+            } else {
+              // Update reference file object on existing custom voice in state
+              existingVoice.referenceFileObject = restoredVoice.referenceFileObject;
+            }
+          }
+        }
+
+        if (newVoicesToAdd.length > 0) {
+          setVoices(prev => [...prev, ...newVoicesToAdd]);
+        }
+      }
+
+      // 3. Restore segments (with audio)
+      if (bundle.segments && Array.isArray(bundle.segments)) {
+        const restoredSegments = bundle.segments.map((seg: any) => {
+          const restored = { ...seg };
+          delete restored.audioBlobBase64;
+
+          if (seg.audioBlobBase64) {
+            const blob = base64ToBlob(seg.audioBlobBase64);
+            restored.audioBlob = blob;
+            restored.audioUrl = URL.createObjectURL(blob);
+          }
+          return restored;
+        });
+
+        setSegments(restoredSegments);
+        if (restoredSegments.length > 0) {
+          setSelectedSegmentId(restoredSegments[0].id);
+        } else {
+          setSelectedSegmentId(null);
+        }
+      }
+
+      onShowToast('Project Imported!', `Successfully loaded project "${bundle.projectName || 'Imported'}"`, 'success');
+    } catch (err: any) {
+      console.error('Failed to import project:', err);
+      onShowToast('Import Failed', 'Failed to read or restore project file. Make sure it is a valid Voxera project export.', 'error');
+    }
+  };
+
   const [showNewProjectConfirm, setShowNewProjectConfirm] = useState(false);
 
   const handleNewProjectClick = () => {
@@ -1205,6 +1394,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         onDownloadComposition={handleDownloadComposition}
         onClearComposition={handleClearComposition}
         onGenerateRemaining={handleGenerateRemaining}
+        onExportProject={handleExportProject}
+        onImportProject={handleImportProject}
       />
 
       {/* Custom Split Script Confirmation Modal */}

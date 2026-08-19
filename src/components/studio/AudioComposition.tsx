@@ -22,6 +22,7 @@ import {
   Loader2,
   ZoomIn,
   ZoomOut,
+  Upload,
 } from 'lucide-react';
 
 interface AudioCompositionProps {
@@ -39,6 +40,8 @@ interface AudioCompositionProps {
   onGenerateRemaining: () => void;
   onTimeUpdate?: (time: number) => void;
   onPlayStateChange?: (playing: boolean) => void;
+  onExportProject?: () => void;
+  onImportProject?: (file: File) => void;
 }
 
 export const AudioComposition: React.FC<AudioCompositionProps> = ({
@@ -56,6 +59,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   onGenerateRemaining,
   onTimeUpdate,
   onPlayStateChange,
+  onExportProject,
+  onImportProject,
 }) => {
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
@@ -116,6 +121,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   // DOM Refs for high-frequency playhead positioning without React re-renders
   const playheadRef = useRef<HTMLDivElement>(null);
   const playheadTimeRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Dragging state
   const isDraggingRef = useRef(false);
@@ -1136,6 +1142,19 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         <div className="relative w-full">
           {/* Hidden WaveSurfer mount point for playback engine */}
           <div ref={waveformRef} className="absolute w-0 h-0 overflow-hidden pointer-events-none" />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && onImportProject) {
+                onImportProject(file);
+              }
+              e.target.value = '';
+            }}
+            accept=".json"
+            className="hidden"
+          />
 
           {/* Timeline Track Scrollable Wrapper */}
           <div
@@ -1538,7 +1557,34 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
               </button>
 
               {showMoreMenu && (
-                <div className="absolute right-0 bottom-10 w-44 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-lg p-1 shadow-xl z-50 text-xs">
+                <div className="absolute right-0 bottom-10 w-48 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-lg p-1 shadow-xl z-50 text-xs flex flex-col gap-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                  {onExportProject && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onExportProject();
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-[var(--bg-inner)] text-[var(--text-main)] rounded text-left cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-purple-500" />
+                      <span>Export project (.json)</span>
+                    </button>
+                  )}
+                  {onImportProject && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.click();
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-[var(--bg-inner)] text-[var(--text-main)] rounded text-left cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-purple-500" />
+                      <span>Import project (.json)</span>
+                    </button>
+                  )}
+                  <div className="h-px bg-[var(--border-subtle)] my-0.5" />
                   <button
                     type="button"
                     onClick={() => {

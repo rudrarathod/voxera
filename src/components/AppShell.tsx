@@ -645,6 +645,7 @@ export const AppShell: React.FC = () => {
           {activeTab === 'studio' && (
             <StudioPage
               voices={voices}
+              setVoices={setVoices}
               selectedVoice={selectedVoice}
               onSelectVoice={setSelectedVoice}
               onCreateVoiceClick={() => setActiveTab('create-voice')}
