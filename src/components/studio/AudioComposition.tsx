@@ -698,11 +698,13 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
   // Seek to segment start
   const handleSeekToSegment = useCallback((segId: string) => {
-    const ws = wavesurferRef.current;
-    if (!ws || totalDuration <= 0) return;
     const offset = visualOffsets.find((s) => s.id === segId);
     if (offset) {
-      ws.setTime(offset.start);
+      // Seek WaveSurfer audio position if ready
+      const ws = wavesurferRef.current;
+      if (ws && totalDuration > 0) {
+        ws.setTime(offset.start);
+      }
       
       // Update DOM immediately
       updatePlayheadDOM(offset.start);
@@ -774,37 +776,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, [rebuildClipLayoutCache, updatePlayheadDOM]);
 
-  // Shared: seek to a pixel X offset within the clips row using pre-cached boundaries
-  const seekToPx = useCallback((clickX: number) => {
-    rebuildClipLayoutCache();
-    const targetTime = getTimeFromPx(clickX);
-    
-    // Immediately update DOM & State (updatePlayheadDOM handles active segment selection)
-    updatePlayheadDOM(targetTime);
-    setCurrentTime(targetTime);
 
-    // If currently playing, restart playback from the new position to ensure sound and visual align
-    if (isPlayingRef.current) {
-      startPlaybackFrom(targetTime);
-    } else {
-      // Seek WaveSurfer audio position without playing
-      const ws = wavesurferRef.current;
-      if (ws && totalDuration > 0) {
-        ws.setTime(targetTime);
-      }
-    }
-  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, totalDuration, startPlaybackFrom]);
-
-  // Handle timeline click (single click to seek)
-  const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!timelineRef.current || totalVisualDuration <= 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
-
-    const timelineRect = timelineRef.current.getBoundingClientRect();
-    const clickX = e.clientX - timelineRect.left + timelineRef.current.scrollLeft;
-    seekToPx(clickX);
-  }, [totalVisualDuration, seekToPx]);
 
   // Handle drag on timeline for scrubbing the playhead with smooth edge-scrolling
   const handleTimelineMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -819,10 +791,16 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     rebuildClipLayoutCache();
 
     // Pause playback while scrubbing
-    const wasPlaying = isPlaying;
+    const wasPlaying = isPlayingRef.current;
     if (wasPlaying) {
-      wavesurferRef.current?.pause();
-      AudioEngine.stop();
+      const ws = wavesurferRef.current;
+      if (ws && totalDuration > 0) {
+        ws.pause();
+      } else {
+        AudioEngine.stop();
+        setIsPlaying(false);
+        setPlayingSegmentId(null);
+      }
     }
 
     const processDrag = (clientX: number) => {
@@ -1159,7 +1137,6 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
           {/* Timeline Track Scrollable Wrapper */}
           <div
             ref={timelineRef}
-            onClick={handleTimelineClick}
             onMouseDown={handleTimelineMouseDown}
             className="w-full relative bg-[var(--bg-inner)] rounded-xl border border-[var(--border-main)] overflow-x-auto overflow-y-visible select-none group/timeline custom-scrollbar cursor-crosshair"
             style={{ minHeight: '80px' }}
@@ -1205,9 +1182,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
               return (
                 <React.Fragment key={seg.id}>
                   {/* Insert indicator before this clip (index idx) */}
-                  <div className="relative group/insert flex items-center justify-center w-2 hover:w-8 transition-all duration-200 shrink-0 self-stretch z-20">
+                  <div className="relative group/insert flex items-center justify-center w-2 shrink-0 self-stretch z-20">
                     {/* Visual vertical indicator line */}
-                    <div className="absolute w-[2px] h-[calc(100%-8px)] rounded-full bg-transparent group-hover/insert:bg-purple-500/35 transition-colors" />
+                    <div className="absolute w-[1.5px] h-[calc(100%-8px)] rounded-full bg-purple-500/15 group-hover/insert:bg-purple-500/35 transition-colors" />
                     
                     {/* Round circular insert segment button */}
                     <button
@@ -1216,10 +1193,10 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                         e.stopPropagation();
                         onInsertSegment?.(idx);
                       }}
-                      className="absolute opacity-0 group-hover/insert:opacity-100 transition-opacity w-5 h-5 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-transform z-30"
+                      className="absolute w-3.5 h-3.5 rounded-full bg-purple-500/10 hover:bg-purple-600 border border-purple-500/20 text-purple-400 hover:text-white flex items-center justify-center shadow-xs cursor-pointer hover:scale-105 active:scale-95 transition-all duration-150 z-30"
                       title={`Insert segment before S0${seg.segmentNumber}`}
                     >
-                      <Plus className="w-3 h-3" />
+                      <Plus className="w-2.5 h-2.5" />
                     </button>
                   </div>
 
