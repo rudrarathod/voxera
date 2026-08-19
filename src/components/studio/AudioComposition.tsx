@@ -74,6 +74,12 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingSegmentId, setPlayingSegmentId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  // Synchronous ref to track currentTime without triggering layout effect dependencies
+  const currentTimeRef = useRef(0);
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
   const [totalDuration, setTotalDuration] = useState(0);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
 
@@ -203,30 +209,39 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     const cache = clipLayoutCacheRef.current;
     if (cache.length === 0) return 0;
 
-    let lastRealTime = 0;
+    // If click is before the first clip's left edge (padding area at start)
+    if (pixelX < cache[0].offsetLeft) {
+      return 0;
+    }
+
     for (let i = 0; i < cache.length; i++) {
       const item = cache[i];
       const elLeft = item.offsetLeft;
       const elRight = elLeft + item.offsetWidth;
+      
+      // Calculate boundary including half the gap to the next element
+      const nextItem = cache[i + 1];
+      const boundaryRight = nextItem ? (elRight + nextItem.offsetLeft) / 2 : elRight;
 
-      if (pixelX >= elLeft && pixelX <= elRight) {
+      if (pixelX <= boundaryRight) {
         if (item.durationSec > 0) {
-          const progressRatio = item.offsetWidth > 0 ? (pixelX - elLeft) / item.offsetWidth : 0;
+          // Clamp click position within the actual clip width for progress calculations
+          const clampedX = Math.max(elLeft, Math.min(elRight, pixelX));
+          const progressRatio = item.offsetWidth > 0 ? (clampedX - elLeft) / item.offsetWidth : 0;
           return item.startRealTime + progressRatio * item.durationSec;
         } else {
           return item.startRealTime;
         }
       }
-      if (item.durationSec > 0) {
-        lastRealTime = item.startRealTime + item.durationSec;
-      }
     }
 
-    if (cache.length > 0) {
-      const firstItem = cache[0];
-      if (pixelX < firstItem.offsetLeft) return 0;
+    // Default to the end of the last audio segment if clicked past the end
+    const lastAudioItem = [...cache].reverse().find(item => item.durationSec > 0);
+    if (lastAudioItem) {
+      return lastAudioItem.startRealTime + lastAudioItem.durationSec;
     }
-    return lastRealTime;
+    const lastItem = cache[cache.length - 1];
+    return lastItem.startRealTime + lastItem.durationSec;
   }, []);
 
   // Directly update playhead and time badge in the DOM (60 FPS) and auto-scroll timeline
@@ -747,20 +762,20 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   useEffect(() => {
     const handle = requestAnimationFrame(() => {
       rebuildClipLayoutCache();
-      updatePlayheadDOM(currentTime);
+      updatePlayheadDOM(currentTimeRef.current);
     });
     return () => cancelAnimationFrame(handle);
-  }, [segments, timelineZoom, rebuildClipLayoutCache, updatePlayheadDOM, currentTime]);
+  }, [segments, timelineZoom, rebuildClipLayoutCache, updatePlayheadDOM]);
 
   // Window resize handler to maintain accurate dimensions
   useEffect(() => {
     const handleResize = () => {
       rebuildClipLayoutCache();
-      updatePlayheadDOM(currentTime);
+      updatePlayheadDOM(currentTimeRef.current);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [rebuildClipLayoutCache, currentTime, updatePlayheadDOM]);
+  }, [rebuildClipLayoutCache, updatePlayheadDOM]);
 
   // Shared: seek to a pixel X offset within the clips row using pre-cached boundaries
   const seekToPx = useCallback((clickX: number) => {
