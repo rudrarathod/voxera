@@ -34,6 +34,8 @@ export const CreateVoicePage: React.FC<CreateVoicePageProps> = ({
   const [isPlayingUploaded, setIsPlayingUploaded] = useState(false);
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [shouldDenoise, setShouldDenoise] = useState(false);
+  const [cloningStage, setCloningStage] = useState(0);
+  const [cloningProgress, setCloningProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,12 +102,15 @@ export const CreateVoicePage: React.FC<CreateVoicePageProps> = ({
     if (!voiceName.trim() || !uploadedFile || !voiceFile) return;
 
     setIsCreating(true);
+    setCloningStage(0);
+    setCloningProgress(10);
     let finalVoiceFile = voiceFile;
     let finalUploadedFile = uploadedFile;
 
     try {
       if (shouldDenoise) {
-        onShowToast('Denoising reference clip...', 'Running DeepFilterNet background suppression', 'info');
+        setCloningStage(0); // "Running background noise suppression..."
+        setCloningProgress(25);
         const denoisedBlob = await denoiseAudio(backendUrl, voiceFile);
         
         const cleanName = voiceFile.name.startsWith('denoised_')
@@ -120,8 +125,17 @@ export const CreateVoicePage: React.FC<CreateVoicePageProps> = ({
         };
       }
 
-      onShowToast('Creating voice clone...', 'Extracting acoustic embeddings', 'info');
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setCloningStage(shouldDenoise ? 1 : 0); // "Extracting acoustic embeddings..."
+      setCloningProgress(50);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      setCloningStage(shouldDenoise ? 2 : 1); // "Matching vocal pitch & timbre..."
+      setCloningProgress(75);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      setCloningStage(shouldDenoise ? 3 : 2); // "Finalizing voice clone..."
+      setCloningProgress(95);
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       const colors = [
         'from-purple-600 to-indigo-700',
@@ -145,6 +159,9 @@ export const CreateVoicePage: React.FC<CreateVoicePageProps> = ({
         referenceFileObject: finalVoiceFile,
         tags: ['Custom', 'Cloned'],
       };
+
+      setCloningProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       onAddVoice(newVoice);
       onShowToast('Voice created!', `Added '${voiceName}' to your library`, 'success');
@@ -338,19 +355,70 @@ export const CreateVoicePage: React.FC<CreateVoicePageProps> = ({
               : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-400/30 cursor-pointer active:scale-98'
           }`}
         >
-          {isCreating ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-purple-200" />
-              <span>Creating voice clone...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              <span>Create voice</span>
-            </>
-          )}
+          <Sparkles className="w-4 h-4" />
+          <span>Create voice</span>
         </button>
       </form>
+
+      {/* Voice Cloning Progress Modal Overlay */}
+      {isCreating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-2xl p-8 max-w-sm w-full text-center space-y-6 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Glowing ambient background spots */}
+            <div className="absolute -top-12 -left-12 w-24 h-24 bg-purple-500/10 rounded-full blur-xl pointer-events-none" />
+            <div className="absolute -bottom-12 -right-12 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
+
+            {/* Glowing active wave animation */}
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-purple-500/10 animate-ping opacity-75 duration-1000" />
+              <div className="absolute inset-0 rounded-full border-2 border-dashed border-purple-500/30 animate-spin [animation-duration:8s]" />
+              <div className="absolute inset-1.5 rounded-full border border-purple-500/50 border-t-transparent animate-spin [animation-duration:1.5s]" />
+
+              <div className="w-14 h-14 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-lg relative">
+                {voiceName ? voiceName.charAt(0).toUpperCase() : 'V'}
+                <Sparkles className="w-4 h-4 text-purple-200 absolute -top-1 -right-1 animate-pulse" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-[var(--text-main)] tracking-wide uppercase">
+                Creating Voice Clone
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] font-mono min-h-5 flex items-center justify-center gap-1.5 transition-all">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                <span>
+                  {shouldDenoise
+                    ? [
+                        'Running background noise suppression...',
+                        'Extracting acoustic embeddings...',
+                        'Matching vocal pitch & timbre...',
+                        'Finalizing voice clone...',
+                      ][cloningStage]
+                    : [
+                        'Extracting acoustic embeddings...',
+                        'Matching vocal pitch & timbre...',
+                        'Finalizing voice clone...',
+                      ][cloningStage]}
+                </span>
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="w-full bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-full h-2 overflow-hidden shadow-inner">
+                <div
+                  className="bg-gradient-to-r from-purple-500 to-indigo-600 h-full rounded-full transition-all duration-300 shadow-sm"
+                  style={{ width: `${cloningProgress}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-mono text-[var(--text-dim)]">
+                <span>STAGE {cloningStage + 1} OF {shouldDenoise ? 4 : 3}</span>
+                <span>{cloningProgress}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
