@@ -301,6 +301,70 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     AudioEngine.playSpeechPreview(seg.text, 1.0, onDone);
   }, [voices]);
 
+  // Start playback from a specific timeline second (supporting fallback playback chain)
+  const startPlaybackFrom = useCallback((startTime: number) => {
+    const ws = wavesurferRef.current;
+    
+    // Stop any existing fallbacks or audio engine playbacks
+    AudioEngine.stop();
+    setPlayingSegmentId(null);
+    setIsPlaying(true);
+
+    const playSegmentChain = (startIndex: number, offsetWithinSegment: number = 0) => {
+      if (startIndex >= segments.length) {
+        setIsPlaying(false);
+        setPlayingSegmentId(null);
+        return;
+      }
+
+      const currentSeg = segments[startIndex];
+      setPlayingSegmentId(currentSeg.id);
+      setIsPlaying(true);
+
+      const onDone = () => {
+        playSegmentChain(startIndex + 1, 0);
+      };
+
+      if (currentSeg.audioBlob) {
+        AudioEngine.playAudioFile(currentSeg.audioBlob, onDone, offsetWithinSegment);
+      } else if (currentSeg.audioUrl) {
+        fetch(currentSeg.audioUrl)
+          .then(r => r.blob())
+          .then(b => AudioEngine.playAudioFile(b, onDone, offsetWithinSegment))
+          .catch(() => {
+            playDraftPreview(currentSeg, onDone);
+          });
+      } else {
+        playDraftPreview(currentSeg, onDone);
+      }
+    };
+
+    if (ws && totalDuration > 0) {
+      ws.setTime(startTime);
+      ws.play().then(() => {
+        setIsPlaying(true);
+      }).catch((err) => {
+        console.warn('WaveSurfer play failed, falling back to AudioEngine:', err);
+        const targetIdx = segmentOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
+        const activeIdx = targetIdx !== -1 ? targetIdx : 0;
+        const targetSeg = segments[activeIdx];
+        if (targetSeg) {
+          const segOffset = Math.max(0, startTime - (segmentOffsets[activeIdx]?.start || 0));
+          playSegmentChain(activeIdx, segOffset);
+        }
+      });
+    } else {
+      // Fallback if WaveSurfer composition isn't loaded (play segment chain continuously)
+      const targetIdx = segmentOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
+      const activeIdx = targetIdx !== -1 ? targetIdx : 0;
+      const targetSeg = segments[activeIdx];
+      if (targetSeg) {
+        const segOffset = Math.max(0, startTime - (segmentOffsets[activeIdx]?.start || 0));
+        playSegmentChain(activeIdx, segOffset);
+      }
+    }
+  }, [segments, segmentOffsets, totalDuration, playDraftPreview]);
+
   const totalSegmentDuration = segmentOffsets.length > 0
     ? segmentOffsets[segmentOffsets.length - 1].end
     : 0;
@@ -569,40 +633,6 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       return;
     }
 
-    // Otherwise, START PLAYBACK
-    AudioEngine.stop();
-    setPlayingSegmentId(null);
-
-    // Helper to play remaining segments in sequence using AudioEngine
-    const playSegmentChain = (startIndex: number, offsetWithinSegment: number = 0) => {
-      if (startIndex >= segments.length) {
-        setIsPlaying(false);
-        setPlayingSegmentId(null);
-        return;
-      }
-
-      const currentSeg = segments[startIndex];
-      setPlayingSegmentId(currentSeg.id);
-      setIsPlaying(true);
-
-      const onDone = () => {
-        playSegmentChain(startIndex + 1, 0);
-      };
-
-      if (currentSeg.audioBlob) {
-        AudioEngine.playAudioFile(currentSeg.audioBlob, onDone, offsetWithinSegment);
-      } else if (currentSeg.audioUrl) {
-        fetch(currentSeg.audioUrl)
-          .then(r => r.blob())
-          .then(b => AudioEngine.playAudioFile(b, onDone, offsetWithinSegment))
-          .catch(() => {
-            playDraftPreview(currentSeg, onDone);
-          });
-      } else {
-        playDraftPreview(currentSeg, onDone);
-      }
-    };
-
     // Calculate effective start time
     let resumeTime = currentTime;
     const effectiveTotal = totalDuration > 0 ? totalDuration : totalSegmentDuration;
@@ -611,32 +641,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       setCurrentTime(0);
     }
 
-    if (ws && totalDuration > 0) {
-      // Seek WaveSurfer directly to the resume time in seconds
-      ws.setTime(resumeTime);
-      ws.play().then(() => {
-        setIsPlaying(true);
-      }).catch((err) => {
-        console.warn('WaveSurfer play failed, falling back to AudioEngine:', err);
-        const targetIdx = segmentOffsets.findIndex((s) => resumeTime >= s.start && resumeTime <= s.end);
-        const activeIdx = targetIdx !== -1 ? targetIdx : 0;
-        const targetSeg = segments[activeIdx];
-        if (targetSeg) {
-          const segOffset = Math.max(0, resumeTime - (segmentOffsets[activeIdx]?.start || 0));
-          playSegmentChain(activeIdx, segOffset);
-        }
-      });
-    } else {
-      // Fallback if WaveSurfer composition isn't loaded (play segment chain continuously)
-      const targetIdx = segmentOffsets.findIndex((s) => resumeTime >= s.start && resumeTime <= s.end);
-      const activeIdx = targetIdx !== -1 ? targetIdx : 0;
-      const targetSeg = segments[activeIdx];
-      if (targetSeg) {
-        const segOffset = Math.max(0, resumeTime - (segmentOffsets[activeIdx]?.start || 0));
-        playSegmentChain(activeIdx, segOffset);
-      }
-    }
-  }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, segments, totalSegmentDuration, playDraftPreview]);
+    startPlaybackFrom(resumeTime);
+  }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, totalSegmentDuration, startPlaybackFrom]);
 
   // Handle global play/pause toggle keyboard shortcut (Space)
   useEffect(() => {
@@ -653,26 +659,29 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     if (!ws || totalDuration <= 0) return;
     const offset = segmentOffsets.find((s) => s.id === segId);
     if (offset) {
-      const seekRatio = offset.start / totalDuration;
-      ws.seekTo(Math.max(0, Math.min(1, seekRatio)));
+      ws.setTime(offset.start);
       
       // Update DOM immediately
       updatePlayheadDOM(offset.start);
       setCurrentTime(offset.start);
+      
+      if (isPlayingRef.current) {
+        startPlaybackFrom(offset.start);
+      }
     }
     onSelectSegment(segId);
-  }, [totalDuration, segmentOffsets, onSelectSegment, updatePlayheadDOM]);
+  }, [totalDuration, segmentOffsets, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
 
   // Play the timeline continuously from the specified segment start
   const playSegmentOnly = useCallback((segId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const ws = wavesurferRef.current;
     const offset = segmentOffsets.find((s) => s.id === segId);
     if (!offset) return;
 
     // If we are currently playing inside the clicked segment, pause it!
     const isCurrentlyActive = isPlaying && (playingSegmentId === segId || (playingSegmentId === null && activeSegment?.id === segId));
     if (isCurrentlyActive) {
+      const ws = wavesurferRef.current;
       if (ws && totalDuration > 0) {
         setCurrentTime(ws.getCurrentTime());
       } else {
@@ -689,35 +698,15 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     const seg = segments.find((s) => s.id === segId);
     if (!seg) return;
 
-    // Pause any active playback first
-    ws?.pause();
-    AudioEngine.stop();
-    setIsPlaying(true);
-    setPlayingSegmentId(null); // Keep null to play timeline continuously
+    onSelectSegment(segId);
+    
+    // Update playhead position immediately to start of segment
+    updatePlayheadDOM(offset.start);
+    setCurrentTime(offset.start);
 
-    if (ws && totalDuration > 0) {
-      ws.setTime(offset.start);
-      ws.play().catch(() => {
-        setIsPlaying(false);
-      });
-    } else {
-      // Fallback if WaveSurfer composition isn't loaded (play just the clicked segment)
-      setPlayingSegmentId(segId);
-      const onDone = () => {
-        setIsPlaying(false);
-        setPlayingSegmentId(null);
-      };
-      if (seg.audioBlob) {
-        AudioEngine.playAudioFile(seg.audioBlob, onDone);
-      } else if (seg.audioUrl) {
-        fetch(seg.audioUrl).then(r => r.blob()).then(b => AudioEngine.playAudioFile(b, onDone)).catch(() => {
-          playDraftPreview(seg, onDone);
-        });
-      } else if (seg.text) {
-        playDraftPreview(seg, onDone);
-      }
-    }
-  }, [isPlaying, playingSegmentId, activeSegment, segments, segmentOffsets, totalDuration, playDraftPreview]);
+    // Start playback from start of segment
+    startPlaybackFrom(offset.start);
+  }, [isPlaying, playingSegmentId, activeSegment, segments, segmentOffsets, totalDuration, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
 
   // Calculate segment visual durations & offsets
   const visualOffsets = React.useMemo(() => {
@@ -772,12 +761,17 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     updatePlayheadDOM(targetTime);
     setCurrentTime(targetTime);
 
-    // Seek WaveSurfer
-    const ws = wavesurferRef.current;
-    if (ws && totalDuration > 0) {
-      ws.seekTo(Math.max(0, Math.min(1, targetTime / totalDuration)));
+    // If currently playing, restart playback from the new position to ensure sound and visual align
+    if (isPlayingRef.current) {
+      startPlaybackFrom(targetTime);
+    } else {
+      // Seek WaveSurfer audio position without playing
+      const ws = wavesurferRef.current;
+      if (ws && totalDuration > 0) {
+        ws.setTime(targetTime);
+      }
     }
-  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, checkAndSelectSegment, totalDuration]);
+  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, checkAndSelectSegment, totalDuration, startPlaybackFrom]);
 
   // Handle timeline click (single click to seek)
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -895,7 +889,12 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       setCurrentTime(finalTime);
 
       if (wasPlaying) {
-        wavesurferRef.current?.play().catch(() => {});
+        startPlaybackFrom(finalTime);
+      } else {
+        const ws = wavesurferRef.current;
+        if (ws && totalDuration > 0) {
+          ws.setTime(finalTime);
+        }
       }
     };
 
