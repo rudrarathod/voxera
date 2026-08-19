@@ -141,8 +141,17 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     lastSelectedIdRef.current = selectedSegmentId;
   }, [selectedSegmentId]);
 
+  // Throttle auto-selection during playback to avoid flickery re-renders
+  const lastAutoSelectTimeRef = useRef(0);
+
   const checkAndSelectSegment = useCallback((id: string) => {
     if (lastSelectedIdRef.current !== id) {
+      // During active playback, throttle selection changes to max 1 per 200ms
+      if (isPlayingRef.current) {
+        const now = performance.now();
+        if (now - lastAutoSelectTimeRef.current < 200) return;
+        lastAutoSelectTimeRef.current = now;
+      }
       onSelectSegment(id);
       lastSelectedIdRef.current = id;
     }
@@ -257,21 +266,31 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     }
 
     // Auto-select the segment that the playhead is currently on
+    // Use segmentOffsets (real audio boundaries) for segments with audio,
+    // and visual cache positions for unsynthesized segments
     const cache = clipLayoutCacheRef.current;
-    let selectedAny = false;
-    for (const item of cache) {
-      const realDur = item.durationSec;
-      if (realDur > 0 && time >= item.startRealTime && time < item.startRealTime + realDur) {
-        checkAndSelectSegment(item.id);
-        selectedAny = true;
-        break;
+    if (cache.length > 0) {
+      // Build a quick lookup using startRealTime accumulated durations
+      let matched = false;
+      for (let i = 0; i < cache.length; i++) {
+        const item = cache[i];
+        const nextItem = cache[i + 1];
+        // Determine the end boundary: for segments with real audio use real end,
+        // for unsynthesized segments, use the start of the next real segment
+        const endBound = item.durationSec > 0
+          ? item.startRealTime + item.durationSec
+          : (nextItem ? nextItem.startRealTime : item.startRealTime + 0.01);
+
+        if (time >= item.startRealTime && time < endBound) {
+          checkAndSelectSegment(item.id);
+          matched = true;
+          break;
+        }
       }
-    }
-    // If we are at the very end of the timeline, select the last audio segment
-    if (!selectedAny && cache.length > 0 && time >= cache[cache.length - 1].startRealTime) {
-      const lastAudioItem = [...cache].reverse().find(item => item.durationSec > 0);
-      if (lastAudioItem) {
-        checkAndSelectSegment(lastAudioItem.id);
+      // Fallback: if past the end, select the last segment
+      if (!matched) {
+        const lastItem = cache[cache.length - 1];
+        checkAndSelectSegment(lastItem.id);
       }
     }
 

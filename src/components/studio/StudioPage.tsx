@@ -171,7 +171,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     if (!selectedSegmentId) return;
     const seg = segments.find((s) => s.id === selectedSegmentId);
     if (seg) {
-      setScriptText(seg.text);
+      // Only update script text if it actually differs to avoid re-render cascades
+      setScriptText((prev) => prev === seg.text ? prev : seg.text);
       if (seg.language) {
         setLanguage(seg.language);
       }
@@ -1195,7 +1196,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         segments={segments}
         voices={voices}
         selectedSegmentId={selectedSegmentId}
-        onSelectSegment={(id) => setSelectedSegmentId(id)}
+        onSelectSegment={setSelectedSegmentId}
         onAddGeneration={handleAddGenerationClick}
         onInsertSegment={handleInsertSegment}
         onDeleteSegment={handleDeleteSegment}
