@@ -165,12 +165,30 @@ export const AppShell: React.FC = () => {
         }
 
         const savedHistory = await VoxeraDB.getAllHistory();
-        setHistory(savedHistory);
+        
+        // Clean up legacy untouched/empty drafts to remove ghost projects
+        const cleanedHistory = [];
+        for (const item of savedHistory) {
+          const isUntouchedDraft =
+            item.id.startsWith('draft-') &&
+            item.title === 'Untitled Composition' &&
+            (!item.segments || item.segments.length === 1) &&
+            (!item.segments || item.segments[0].text === 'Welcome to Voxera. This is a test of the AI voice studio.') &&
+            item.durationSec === 0 &&
+            !item.audioBlob;
+
+          if (isUntouchedDraft) {
+            await VoxeraDB.deleteHistoryItem(item.id);
+          } else {
+            cleanedHistory.push(item);
+          }
+        }
+        setHistory(cleanedHistory);
 
         // Restore settings for the active project on load if a draft exists
         if (isContinuingSession) {
           const activeProjectId = localStorage.getItem('voxera_project_id') || currentProjectId;
-          const activeDraft = savedHistory.find((item) => item.id === `draft-${activeProjectId}`);
+          const activeDraft = cleanedHistory.find((item) => item.id === `draft-${activeProjectId}`);
           if (activeDraft && activeDraft.projectSettings) {
             setLanguage(activeDraft.projectSettings.language);
             setSpeed(activeDraft.projectSettings.speed);
@@ -219,6 +237,26 @@ export const AppShell: React.FC = () => {
     if (!isInitialLoadDone) return;
 
     const saveDraft = async () => {
+      // Check if project is completely untouched to avoid creating ghost projects
+      const isUntouched =
+        projectName === 'Untitled Composition' &&
+        segments.length === 1 &&
+        segments[0].text === 'Welcome to Voxera. This is a test of the AI voice studio.' &&
+        segments[0].durationSec === 0 &&
+        !segments[0].audioBlob &&
+        selectedVoice.id === INITIAL_VOICES[0].id &&
+        language === 'English' &&
+        speed === '1.0x' &&
+        exaggeration === '0.5' &&
+        advancedSettings.temperature === 0.7 &&
+        advancedSettings.cfgScale === 1.5 &&
+        advancedSettings.seed === 429103 &&
+        advancedSettings.model === 'chatterbox-turbo';
+
+      if (isUntouched) {
+        return;
+      }
+
       const draftId = `draft-${currentProjectId}`;
       const scriptSnippet = segments.length > 0 ? segments[0].text : '';
       const fullScript = segments.map((s) => s.text).join('\n');

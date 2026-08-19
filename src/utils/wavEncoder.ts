@@ -1,7 +1,7 @@
 /**
  * Helper to encode an AudioBuffer back to 16-bit PCM WAV bytes
  */
-function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+export function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
   const numOfChan = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
   const format = 1; // raw PCM

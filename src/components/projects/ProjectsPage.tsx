@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GenerationHistoryItem } from '../../types';
-import { Search, Trash2, FileAudio, LayoutGrid, ListFilter, Plus } from 'lucide-react';
+import { Search, Trash2, FileAudio, LayoutGrid, ListFilter, Plus, Calendar, ArrowUpDown } from 'lucide-react';
 import { AudioEngine } from '../../utils/audioEngine';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RenameProjectModal } from '../studio/RenameProjectModal';
@@ -204,83 +204,78 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       </div>
 
       {/* Filter, Sort, View Controls */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shrink-0 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-xl p-3">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shrink-0 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-xl p-4 shadow-xs">
+        <div className="flex items-center gap-4">
           {/* View Toggle */}
-          <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
+          <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg shrink-0">
             <button
               onClick={() => setViewMode('projects')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                 viewMode === 'projects'
                   ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
               }`}
             >
-              <LayoutGrid className="w-3 h-3" />
+              <LayoutGrid className="w-3.5 h-3.5" />
               <span>Projects</span>
             </button>
             <button
               onClick={() => setViewMode('flat')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                 viewMode === 'flat'
                   ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
               }`}
             >
-              <ListFilter className="w-3 h-3" />
+              <ListFilter className="w-3.5 h-3.5" />
               <span>Flat List</span>
             </button>
           </div>
-
-          {/* Period Pills */}
-          <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
-            {(['All', 'Today', 'This week', 'This month'] as const).map((period) => (
-              <button
-                key={period}
-                onClick={() => setFilterPeriod(period)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
-                  filterPeriod === period
-                    ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                }`}
-              >
-                {period === 'All' ? 'All Time' : period}
-              </button>
-            ))}
-          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          {/* Sorting */}
-          <div className="relative w-full sm:w-auto flex items-center gap-2">
-            <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold shrink-0">Sort By</span>
-            <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg">
-              {(['Newest', 'Oldest', 'Name', 'Duration'] as const).map((sortOpt) => (
-                <button
-                  key={sortOpt}
-                  onClick={() => setSortBy(sortOpt)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-[10px] transition-colors cursor-pointer ${
-                    sortBy === sortOpt
-                      ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                  }`}
-                >
-                  {sortOpt === 'Name' ? 'A-Z' : sortOpt}
-                </button>
-              ))}
-            </div>
-          </div>
-
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 md:justify-end">
           {/* Search */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3 top-2.5" />
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="w-4 h-4 text-[var(--text-dim)] absolute left-3 top-2.5" />
             <input
               type="text"
               placeholder="Search projects or logs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden focus:border-purple-500/60"
+              className="w-full pl-9 pr-3 py-2 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-hidden focus:border-purple-500/60"
             />
+          </div>
+
+          {/* Period Filter */}
+          <div className="relative">
+            <Calendar className="w-4 h-4 text-[var(--text-dim)] absolute left-3 top-2.5 pointer-events-none" />
+            <select
+              value={filterPeriod}
+              onChange={(e) => setFilterPeriod(e.target.value as any)}
+              className="appearance-none w-full pl-9 pr-8 py-2 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] focus:outline-hidden focus:border-purple-500/60 cursor-pointer"
+            >
+              <option value="All">All Time</option>
+              <option value="Today">Today</option>
+              <option value="This week">This Week</option>
+              <option value="This month">This Month</option>
+            </select>
+            <div className="absolute right-3 top-3.5 pointer-events-none border-l-4 border-r-4 border-t-4 border-transparent border-t-[var(--text-dim)] w-0 h-0" />
+          </div>
+
+          {/* Sorting */}
+          <div className="relative">
+            <ArrowUpDown className="w-4 h-4 text-[var(--text-dim)] absolute left-3 top-2.5 pointer-events-none" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="appearance-none w-full pl-9 pr-8 py-2 bg-[var(--bg-inner)] border border-[var(--border-subtle)] rounded-lg text-xs text-[var(--text-main)] focus:outline-hidden focus:border-purple-500/60 cursor-pointer"
+            >
+              <option value="Newest">Newest First</option>
+              <option value="Oldest">Oldest First</option>
+              <option value="Name">Alphabetical (A-Z)</option>
+              <option value="Duration">Longest Duration</option>
+            </select>
+            <div className="absolute right-3 top-3.5 pointer-events-none border-l-4 border-r-4 border-t-4 border-transparent border-t-[var(--text-dim)] w-0 h-0" />
           </div>
         </div>
       </div>

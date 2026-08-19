@@ -1,3 +1,5 @@
+import { audioBufferToWav } from './wavEncoder';
+
 export interface BackendHealth {
   online: boolean;
   device?: string;
@@ -20,6 +22,14 @@ export interface TTSParams {
  * Uses a short timeout to fail fast if the backend is not running.
  */
 export async function checkHealth(baseUrl: string): Promise<BackendHealth> {
+  if (import.meta.env.VITE_DEMO_MODE === 'true') {
+    return {
+      online: true,
+      device: 'Demo Mode (Offline Frontend)',
+      ttsLoaded: true,
+      vcLoaded: true,
+    };
+  }
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), 3000); // 3-second timeout
 
@@ -57,6 +67,9 @@ export async function uploadReference(
   baseUrl: string,
   audioFile: File
 ): Promise<string> {
+  if (import.meta.env.VITE_DEMO_MODE === 'true') {
+    return `mock-ref-${Date.now()}`;
+  }
   const url = `${baseUrl.replace(/\/$/, '')}/api/upload_reference`;
   const formData = new FormData();
   formData.append('audio_prompt', audioFile);
@@ -98,6 +111,12 @@ export async function generateTTS(
   audioPromptFile?: File,
   referenceId?: string
 ): Promise<Blob> {
+  if (import.meta.env.VITE_DEMO_MODE === 'true') {
+    // Simulate generation latency (300ms to 1200ms depending on text length)
+    const delay = Math.max(300, Math.min(1200, params.text.length * 10));
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    return await generateMockAudio(params.text);
+  }
   const url = `${baseUrl.replace(/\/$/, '')}/api/tts`;
   const formData = new FormData();
 
@@ -198,6 +217,11 @@ export async function generateTTSWithCache(
  * Returns the enhanced WAV file Blob.
  */
 export async function denoiseAudio(baseUrl: string, audioFile: File): Promise<Blob> {
+  if (import.meta.env.VITE_DEMO_MODE === 'true') {
+    // Simulate denoising delay (800ms) and return the original audio file
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return audioFile;
+  }
   const url = `${baseUrl.replace(/\/$/, '')}/api/denoise`;
   const formData = new FormData();
   formData.append('audio', audioFile);
@@ -226,4 +250,55 @@ export function clearReferenceCache(): void {
   for (const key in referenceCache) {
     delete referenceCache[key];
   }
+}
+
+/**
+ * Programmatically synthesizes a dynamic vocal-like triangle wave WAV audio blob.
+ * This runs completely offline and requires no static WAV files.
+ */
+async function generateMockAudio(text: string): Promise<Blob> {
+  const sampleRate = 24000;
+  // Calculate dynamic duration based on word count (approx. 0.4s per word), clamped between 1.5s and 10s
+  const wordCount = text.split(/\s+/).filter(Boolean).length || 1;
+  const durationSec = Math.max(1.5, Math.min(10, wordCount * 0.45));
+  const numSamples = Math.floor(sampleRate * durationSec);
+
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error('Web Audio API not supported in this browser.');
+  }
+
+  // Create offline rendering context
+  const offlineCtx = new OfflineAudioContext(1, numSamples, sampleRate);
+
+  // Soft vocal-hum tone (triangle oscillator)
+  const osc = offlineCtx.createOscillator();
+  osc.type = 'triangle';
+
+  // Base frequency centered around pitch range of human voice
+  const baseFreq = 120 + (text.length % 70);
+  osc.frequency.setValueAtTime(baseFreq, 0);
+
+  // Add subtle voice pitch inflection/modulation (vibrato)
+  osc.frequency.linearRampToValueAtTime(baseFreq + 12, durationSec * 0.25);
+  osc.frequency.linearRampToValueAtTime(baseFreq - 8, durationSec * 0.6);
+  osc.frequency.linearRampToValueAtTime(baseFreq + 4, durationSec * 0.85);
+  osc.frequency.setValueAtTime(baseFreq, durationSec);
+
+  // Fade gain in/out to prevent pop/click noises
+  const gainNode = offlineCtx.createGain();
+  gainNode.gain.setValueAtTime(0, 0);
+  gainNode.gain.linearRampToValueAtTime(0.25, 0.06); // Smooth fade-in
+  gainNode.gain.setValueAtTime(0.25, durationSec - 0.06);
+  gainNode.gain.linearRampToValueAtTime(0, durationSec); // Smooth fade-out
+
+  osc.connect(gainNode);
+  gainNode.connect(offlineCtx.destination);
+
+  osc.start(0);
+  osc.stop(durationSec);
+
+  const renderedBuffer = await offlineCtx.startRendering();
+  const wavBytes = audioBufferToWav(renderedBuffer);
+  return new Blob([wavBytes], { type: 'audio/wav' });
 }

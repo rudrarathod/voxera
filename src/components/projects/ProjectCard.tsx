@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { GenerationHistoryItem } from '../../types';
-import { ChevronDown, ChevronUp, Folder, Pencil, Trash2, ArrowRight } from 'lucide-react';
-import { ProjectVersionRow } from './ProjectVersionRow';
+import { Folder, Pencil, Trash2, ArrowRight } from 'lucide-react';
 import { formatRelativeTime } from '../../utils/timeFormat';
 
 interface ProjectCardProps {
@@ -33,8 +32,6 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onDeleteProject,
   onRenameProject,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   // Sort versions: drafts first, then descending version numbers
   const sortedVersions = [...versions].sort((a, b) => {
     if (a.id.startsWith('draft-')) return -1;
@@ -71,22 +68,21 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   const lastModifiedStr = new Date(maxTimestamp).toISOString();
 
   return (
-    <div className="bg-[var(--bg-panel)] border border-[var(--border-main)] hover:border-purple-500/30 rounded-xl overflow-hidden transition-all duration-200 shadow-xs hover:shadow-sm">
-      {/* Card Header */}
+    <div className="bg-[var(--bg-panel)] border border-[var(--border-main)] hover:border-purple-500/25 rounded-xl overflow-hidden transition-all duration-200 shadow-xs hover:shadow-md hover:bg-[var(--bg-panel)]/80">
+      {/* Card Header (Row Layout) - Clicking loads latest version into studio */}
       <div
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 cursor-pointer hover:bg-[var(--bg-card)] transition-colors select-none"
+        onClick={() => onLoadIntoStudio(latestItem)}
+        className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 cursor-pointer select-none hover:bg-[var(--bg-card)]/50 transition-colors"
       >
-        <div className="flex items-start gap-3.5 min-w-0 flex-1">
-          {/* Icon */}
-          <div className="w-10 h-10 rounded-lg bg-purple-600/10 flex items-center justify-center text-purple-400 shrink-0 mt-0.5">
+        {/* Left Side: Title and Status */}
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <div className="w-11 h-11 rounded-xl bg-purple-600/10 flex items-center justify-center text-purple-400 shrink-0 shadow-inner">
             <Folder className="w-5.5 h-5.5" />
           </div>
-
-          {/* Title and stats info */}
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)] truncate max-w-[250px] md:max-w-md">
+          
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-sm md:text-base font-semibold text-[var(--text-main)] truncate max-w-[200px] md:max-w-xs lg:max-w-md leading-tight">
                 {projectName}
               </h3>
               
@@ -96,62 +92,63 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
                   e.stopPropagation();
                   onRenameProject(latestItem);
                 }}
-                className="p-1 rounded hover:bg-[var(--bg-card)] text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
                 title="Rename Project"
               >
-                <Pencil className="w-3 h-3" />
+                <Pencil className="w-3.5 h-3.5" />
               </button>
 
-              {/* Status Badge */}
               {hasExport ? (
-                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   Exported
                 </span>
               ) : (
-                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
                   Draft
                 </span>
               )}
-
-              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-[var(--bg-inner)] text-[var(--text-dim)] border border-[var(--border-subtle)] font-mono">
-                {versionsCount} {versionsCount === 1 ? 'version' : 'versions'}
-              </span>
-
-              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-[var(--bg-inner)] text-[var(--text-dim)] border border-[var(--border-subtle)] font-mono">
-                {latestSegments} {latestSegments === 1 ? 'track' : 'tracks'}
-              </span>
-
-              <span className="text-[10px] text-[var(--text-dim)] font-mono ml-auto md:ml-0">
-                Updated {formatRelativeTime(lastModifiedStr)}
-              </span>
             </div>
-
-            {/* Subtitle details */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)]">
-              {voicesText && (
-                <div>
-                  Voices: <span className="text-purple-400 font-medium">{voicesText}</span>
-                </div>
-              )}
-              {latestDuration > 0 && (
-                <div>
-                  Duration: <span className="text-[var(--text-main)] font-mono font-semibold">{latestDuration.toFixed(1)}s</span>
-                </div>
-              )}
+            
+            <div className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+              <span>Updated {formatRelativeTime(lastModifiedStr)}</span>
             </div>
           </div>
         </div>
 
-        {/* Right side controls */}
-        <div
-          className="flex items-center justify-between md:justify-end gap-3 shrink-0 border-t border-[var(--border-subtle)] md:border-t-0 pt-3 md:pt-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+        {/* Middle Side: Metadata Stats (Clean columns) */}
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-x-6 gap-y-2 text-xs text-[var(--text-muted)] shrink-0 lg:px-6">
           <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-[var(--text-main)]">{versionsCount}</span>
+            <span className="text-[var(--text-dim)]">{versionsCount === 1 ? 'version' : 'versions'}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-[var(--text-main)]">{latestSegments}</span>
+            <span className="text-[var(--text-dim)]">{latestSegments === 1 ? 'track' : 'tracks'}</span>
+          </div>
+
+          {latestDuration > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono font-semibold text-[var(--text-main)]">{latestDuration.toFixed(1)}s</span>
+              <span className="text-[var(--text-dim)]">duration</span>
+            </div>
+          )}
+
+          {voicesText && (
+            <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1 max-w-[200px] truncate">
+              <span className="text-[var(--text-dim)]">Voices:</span>
+              <span className="text-purple-400 font-medium truncate">{voicesText}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Actions */}
+        <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 border-t border-[var(--border-subtle)] lg:border-t-0 pt-3 lg:pt-0" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => onLoadIntoStudio(latestItem)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95 animate-in fade-in"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer hover:shadow-sm"
               title="Open the latest version in the Studio tab"
             >
               <span>Open Studio</span>
@@ -164,37 +161,11 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
               className="p-2 rounded-lg bg-[var(--bg-card)] hover:bg-red-500/10 border border-[var(--border-main)] hover:border-red-500/30 text-[var(--text-muted)] hover:text-red-500 cursor-pointer transition-colors"
               title="Delete whole project history"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-4 h-4" />
             </button>
-          </div>
-
-          <div className="text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors p-1 rounded hover:bg-[var(--bg-card)] cursor-pointer">
-            {isExpanded ? <ChevronUp className="w-4.5 h-4.5" /> : <ChevronDown className="w-4.5 h-4.5" />}
           </div>
         </div>
       </div>
-
-      {/* Expanded Versions List */}
-      {isExpanded && (
-        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-2.5">
-          <div className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-            Generation History Versions
-          </div>
-          {sortedVersions.map((versionItem) => (
-            <ProjectVersionRow
-              key={versionItem.id}
-              item={versionItem}
-              isPlaying={playingId === versionItem.id}
-              copiedId={copiedId}
-              onTogglePlay={onTogglePlay}
-              onDownload={onDownload}
-              onCopyText={onCopyText}
-              onLoadIntoStudio={onLoadIntoStudio}
-              onDelete={onDeleteVersion}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 };

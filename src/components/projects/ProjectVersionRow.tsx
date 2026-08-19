@@ -59,61 +59,61 @@ export const ProjectVersionRow: React.FC<ProjectVersionRowProps> = ({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[var(--bg-inner)] border border-[var(--border-subtle)] hover:border-purple-500/20 rounded-lg transition-all text-xs group/row">
-      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[var(--bg-inner)] border border-[var(--border-subtle)] hover:border-purple-500/20 rounded-xl transition-all text-xs group/row shadow-xs">
+      <div className="flex items-start md:items-center gap-4 min-w-0 flex-1">
         {/* Play/Draft Indicator Button */}
         {isDraft ? (
-          <div className="p-1.5 rounded-full bg-purple-600/10 text-purple-400 border border-purple-500/20 shrink-0">
-            <FileEdit className="w-3.5 h-3.5" />
+          <div className="p-2.5 rounded-xl bg-purple-600/10 text-purple-400 border border-purple-500/20 shrink-0">
+            <FileEdit className="w-4 h-4" />
           </div>
         ) : (
           <button
             type="button"
             onClick={(e) => onTogglePlay(item, e)}
-            className={`p-1.5 rounded-full transition-all shrink-0 cursor-pointer shadow-xs active:scale-95 ${
+            className={`p-2.5 rounded-xl transition-all shrink-0 cursor-pointer shadow-xs active:scale-95 ${
               isPlaying
                 ? 'bg-purple-600 text-white shadow-purple-500/20'
                 : 'bg-[var(--bg-card)] hover:bg-[var(--bg-panel)] border border-[var(--border-main)] text-[var(--text-main)]'
             }`}
           >
             {isPlaying ? (
-              <Pause className="w-3.5 h-3.5" />
+              <Pause className="w-4 h-4" />
             ) : (
-              <Play className="w-3.5 h-3.5 ml-0.5" />
+              <Play className="w-4 h-4 ml-0.5" />
             )}
           </button>
         )}
 
         {/* Details */}
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-[var(--text-main)] font-mono">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-bold text-sm text-[var(--text-main)] font-mono">
               {isDraft ? 'DRAFT' : `V${item.version || 1}`}
             </span>
             {getGenerationTypeBadge()}
-            <span className="text-[10px] font-medium text-[var(--text-muted)] font-mono">
+            <span className="text-xs font-semibold text-[var(--text-muted)] font-mono">
               {isDraft ? `${item.segmentsCount || 0} segment${(item.segmentsCount || 0) === 1 ? '' : 's'}` : (item.durationSec > 0 ? `${item.durationSec.toFixed(1)}s` : item.duration)}
             </span>
-            <span className="text-[10px] text-[var(--text-dim)] font-mono">
+            <span className="text-[11px] text-[var(--text-dim)]">
               {formatRelativeTime(item.createdAt)}
             </span>
           </div>
 
           {/* Snippet */}
-          <div className="relative group/snippet max-w-xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] rounded px-2 py-1 flex items-center justify-between gap-2">
-            <p className="text-[10px] text-[var(--text-muted)] italic truncate flex-1">
+          <div className="relative group/snippet max-w-2xl bg-[var(--bg-panel)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 flex items-center justify-between gap-3 shadow-xs">
+            <p className="text-[11px] text-[var(--text-muted)] italic truncate flex-1 leading-normal">
               "{item.scriptSnippet || 'No script text entered yet.'}"
             </p>
             <button
               type="button"
               onClick={(e) => onCopyText(item, e)}
-              className="p-0.5 rounded hover:bg-[var(--bg-card)] text-[var(--text-dim)] hover:text-[var(--text-main)] opacity-0 group-hover/snippet:opacity-100 transition-opacity duration-150 cursor-pointer"
+              className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-dim)] hover:text-[var(--text-main)] opacity-0 group-hover/snippet:opacity-100 transition-opacity duration-150 cursor-pointer"
               title="Copy script text"
             >
               {copiedId === item.id ? (
-                <Check className="w-3 h-3 text-emerald-400" />
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
               ) : (
-                <Copy className="w-3 h-3" />
+                <Copy className="w-3.5 h-3.5" />
               )}
             </button>
           </div>
@@ -121,41 +121,41 @@ export const ProjectVersionRow: React.FC<ProjectVersionRowProps> = ({
       </div>
 
       {/* Meta Voice & Actions */}
-      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 border-t border-[var(--border-subtle)] sm:border-t-0 pt-2 sm:pt-0">
-        <div className="text-[10px] text-left sm:text-right shrink-0">
-          <span className="text-purple-400 font-bold">{item.voiceName}</span>
-          <p className="text-[9px] text-[var(--text-dim)]">{item.language}</p>
+      <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t border-[var(--border-subtle)] md:border-t-0 pt-3 md:pt-0">
+        <div className="text-right shrink-0">
+          <span className="text-purple-400 font-bold text-xs">{item.voiceName}</span>
+          <p className="text-[10px] text-[var(--text-dim)] font-medium">{item.language}</p>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => onLoadIntoStudio(item)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-[10px] font-semibold transition-all cursor-pointer"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white border border-purple-500/20 hover:border-purple-600 text-xs font-semibold transition-all cursor-pointer shadow-xs"
             title="Load this version into studio"
           >
             <span>Restore</span>
-            <ArrowRight className="w-3 h-3" />
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
 
           {!isDraft && (
             <button
               type="button"
               onClick={(e) => onDownload(item, e)}
-              className="p-1.5 rounded bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+              className="p-2 rounded-lg bg-[var(--bg-card)] hover:bg-[var(--bg-inner)] border border-[var(--border-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer transition-colors"
               title="Download WAV file"
             >
-              <Download className="w-3 h-3" />
+              <Download className="w-3.5 h-3.5" />
             </button>
           )}
 
           <button
             type="button"
             onClick={(e) => onDelete(item, e)}
-            className="p-1.5 rounded bg-[var(--bg-card)] hover:bg-red-500/10 border border-[var(--border-main)] hover:border-red-500/30 text-[var(--text-muted)] hover:text-red-500 cursor-pointer"
+            className="p-2 rounded-lg bg-[var(--bg-card)] hover:bg-red-500/10 border border-[var(--border-main)] hover:border-red-500/30 text-[var(--text-muted)] hover:text-red-500 cursor-pointer transition-colors"
             title={isDraft ? "Delete draft workspace" : "Delete this version"}
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

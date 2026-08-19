@@ -9,7 +9,6 @@ import {
   Plus,
   RotateCw,
   Trash2,
-  Edit3,
   Check,
   X,
   Volume2,
@@ -62,10 +61,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   onExportProject,
   onImportProject,
 }) => {
-  const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isSegmentsCollapsed, setIsSegmentsCollapsed] = useState(true);
+  const [activeMenuSegmentId, setActiveMenuSegmentId] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState<'wav' | 'mp3' | 'flac' | 'm4a'>('wav');
@@ -84,6 +82,16 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
+
+  // Close active dropdown menu when clicking anywhere outside
+  useEffect(() => {
+    if (!activeMenuSegmentId) return;
+    const handleOutsideClick = () => {
+      setActiveMenuSegmentId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [activeMenuSegmentId]);
 
   const [totalDuration, setTotalDuration] = useState(0);
   const [isWaveformReady, setIsWaveformReady] = useState(false);
@@ -891,19 +899,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     document.addEventListener('mouseup', onMouseUp);
   }, [totalVisualDuration, isPlaying, totalDuration, getTimeFromPx, updatePlayheadDOM, throttledSetCurrentTime, rebuildClipLayoutCache, startPlaybackFrom]);
 
-  const startEdit = (seg: AudioSegment, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsSegmentsCollapsed(false);
-    setEditingSegmentId(seg.id);
-    setEditingText(seg.text);
-  };
 
-  const saveEdit = (id: string) => {
-    if (editingText.trim()) {
-      onUpdateSegmentText(id, editingText);
-    }
-    setEditingSegmentId(null);
-  };
 
   // Empty state
   if (segments.length === 0) {
@@ -935,7 +931,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                   Timeline Segments List ({segments.length})
                 </h4>
                 <p className="text-[11px] text-[var(--text-muted)]">
-                  Edit text or select segments to preview details
+                  Select segments to preview details
                 </p>
               </div>
               <button
@@ -950,7 +946,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {segments.map((seg) => {
                   const isSelected = selectedSegmentId === seg.id;
-                  const isEditing = editingSegmentId === seg.id;
+                  const isMenuOpen = activeMenuSegmentId === seg.id;
 
                   return (
                     <div
@@ -1002,7 +998,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                             </button>
                           )}
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                           {seg.isGenerating && (
                             <span className="text-[9px] text-amber-400 font-mono animate-pulse">
                               Processing
@@ -1011,101 +1007,73 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                           <span className="text-[10px] text-[var(--text-dim)] font-mono">
                             {seg.durationSec.toFixed(1)}s
                           </span>
+
+                          {/* Three-dot dropdown menu */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuSegmentId(isMenuOpen ? null : seg.id);
+                              }}
+                              className="p-0.5 rounded hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer flex items-center justify-center"
+                              title="Segment options"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+
+                            {isMenuOpen && (
+                              <div className="absolute right-0 mt-1 w-32 bg-[var(--bg-panel)] border border-[var(--border-main)] rounded-lg shadow-lg py-1 z-30 animate-in fade-in duration-100">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const idx = segments.findIndex(s => s.id === seg.id);
+                                    if (idx !== -1 && onInsertSegment) {
+                                      onInsertSegment(idx);
+                                    }
+                                    setActiveMenuSegmentId(null);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 text-[10px] text-[var(--text-main)] hover:bg-[var(--bg-inner)] flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3 text-purple-500" />
+                                  <span>Insert Segment</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRegenerateSegment(seg.id);
+                                    setActiveMenuSegmentId(null);
+                                  }}
+                                  className="w-full text-left px-2.5 py-1.5 text-[10px] text-[var(--text-main)] hover:bg-[var(--bg-inner)] flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <RotateCw className={`w-3 h-3 text-purple-500 ${seg.isGenerating ? 'animate-spin' : ''}`} />
+                                  <span>Regenerate</span>
+                                </button>
+                                {segments.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteSegment(seg.id);
+                                      setActiveMenuSegmentId(null);
+                                    }}
+                                    className="w-full text-left px-2.5 py-1.5 text-[10px] text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            className="flex-1 text-[11px] bg-[var(--bg-inner)] border border-[var(--border-main)] rounded px-1.5 py-0.5 text-[var(--text-main)] focus:outline-hidden focus:border-purple-500/40"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveEdit(seg.id);
-                              if (e.key === 'Escape') setEditingSegmentId(null);
-                            }}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              saveEdit(seg.id);
-                            }}
-                            className="p-0.5 rounded text-green-500 hover:bg-green-500/10 cursor-pointer"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingSegmentId(null);
-                            }}
-                            className="p-0.5 rounded text-[var(--text-muted)] hover:bg-[var(--bg-inner)] cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-[var(--text-main)] truncate leading-snug">
-                          {seg.text}
-                        </p>
-                      )}
-
-                      {/* Hover actions */}
-                      <div className="absolute top-1 right-1 hidden group-hover:flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const idx = segments.findIndex(s => s.id === seg.id);
-                            if (idx !== -1 && onInsertSegment) {
-                              onInsertSegment(idx);
-                            }
-                          }}
-                          className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-purple-500 transition-colors cursor-pointer"
-                          title="Insert blank segment before this"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRegenerateSegment(seg.id);
-                          }}
-                          className="p-1 rounded hover:bg-purple-600/10 text-[var(--text-muted)] hover:text-purple-500 transition-colors cursor-pointer"
-                          title="Regenerate"
-                        >
-                          <RotateCw
-                            className={`w-3 h-3 ${seg.isGenerating ? 'animate-spin' : ''}`}
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => startEdit(seg, e)}
-                          className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
-                          title="Edit text"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                        </button>
-                        {segments.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteSegment(seg.id);
-                            }}
-                            className="p-1 rounded hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-[11px] text-[var(--text-main)] truncate leading-snug">
+                        {seg.text}
+                      </p>
                     </div>
                   );
                 })}
