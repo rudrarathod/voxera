@@ -795,11 +795,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
-    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
-    if (!clipsRow) return;
-
-    const rowRect = clipsRow.getBoundingClientRect();
-    const clickX = e.clientX - rowRect.left + timelineRef.current.scrollLeft;
+    const timelineRect = timelineRef.current.getBoundingClientRect();
+    const clickX = e.clientX - timelineRect.left + timelineRef.current.scrollLeft;
     seekToPx(clickX);
   }, [totalVisualDuration, seekToPx]);
 
@@ -813,9 +810,6 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     isDraggingRef.current = true;
 
     // Recalculate layout metrics on drag start
-    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
-    if (!clipsRow) return;
-    let rowRect = clipsRow.getBoundingClientRect();
     rebuildClipLayoutCache();
 
     // Pause playback while scrubbing
@@ -827,8 +821,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
     const processDrag = (clientX: number) => {
       if (!timelineRef.current) return;
+      const timelineRect = timelineRef.current.getBoundingClientRect();
       const scrollL = timelineRef.current.scrollLeft;
-      const clickX = clientX - rowRect.left + scrollL;
+      const clickX = clientX - timelineRect.left + scrollL;
       const targetTime = getTimeFromPx(clickX);
       
       // Zero-lag visual updates (updatePlayheadDOM handles active segment selection)
@@ -856,8 +851,6 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       const rect = timeline.getBoundingClientRect();
       const edgeMargin = 45;
       const maxScrollSpeed = 12;
-
-      rowRect = clipsRow.getBoundingClientRect();
 
       if (currentMouseX > rect.right - edgeMargin) {
         const intensity = Math.min(1, (currentMouseX - (rect.right - edgeMargin)) / edgeMargin);
@@ -891,16 +884,19 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       document.body.style.userSelect = '';
 
       // Commit final time on release
-      const scrollL = timelineRef.current ? timelineRef.current.scrollLeft : 0;
-      const finalTime = getTimeFromPx(currentMouseX - rowRect.left + scrollL);
-      setCurrentTime(finalTime);
+      if (timelineRef.current) {
+        const timelineRect = timelineRef.current.getBoundingClientRect();
+        const scrollL = timelineRef.current.scrollLeft;
+        const finalTime = getTimeFromPx(currentMouseX - timelineRect.left + scrollL);
+        setCurrentTime(finalTime);
 
-      if (wasPlaying) {
-        startPlaybackFrom(finalTime);
-      } else {
-        const ws = wavesurferRef.current;
-        if (ws && totalDuration > 0) {
-          ws.setTime(finalTime);
+        if (wasPlaying) {
+          startPlaybackFrom(finalTime);
+        } else {
+          const ws = wavesurferRef.current;
+          if (ws && totalDuration > 0) {
+            ws.setTime(finalTime);
+          }
         }
       }
     };
@@ -909,7 +905,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [totalVisualDuration, isPlaying, totalDuration, getTimeFromPx, updatePlayheadDOM, throttledSetCurrentTime, rebuildClipLayoutCache, checkAndSelectSegment]);
+  }, [totalVisualDuration, isPlaying, totalDuration, getTimeFromPx, updatePlayheadDOM, throttledSetCurrentTime, rebuildClipLayoutCache, startPlaybackFrom]);
 
   const startEdit = (seg: AudioSegment, e: React.MouseEvent) => {
     e.stopPropagation();
