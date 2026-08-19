@@ -241,6 +241,25 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       playheadTimeRef.current.innerText = formatTime(time);
     }
 
+    // Auto-select the segment that the playhead is currently on
+    const cache = clipLayoutCacheRef.current;
+    let selectedAny = false;
+    for (const item of cache) {
+      const realDur = item.durationSec;
+      if (realDur > 0 && time >= item.startRealTime && time < item.startRealTime + realDur) {
+        checkAndSelectSegment(item.id);
+        selectedAny = true;
+        break;
+      }
+    }
+    // If we are at the very end of the timeline, select the last audio segment
+    if (!selectedAny && cache.length > 0 && time >= cache[cache.length - 1].startRealTime) {
+      const lastAudioItem = [...cache].reverse().find(item => item.durationSec > 0);
+      if (lastAudioItem) {
+        checkAndSelectSegment(lastAudioItem.id);
+      }
+    }
+
     // Auto-scroll timeline to follow playhead smoothly during playback
     if (isPlayingRef.current && timelineRef.current && !isDraggingRef.current) {
       const timeline = timelineRef.current;
@@ -260,7 +279,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         });
       }
     }
-  }, [getPlayheadPxFromTime, formatTime]);
+  }, [getPlayheadPxFromTime, formatTime, checkAndSelectSegment]);
 
   // Throttled React state updates to prevent component rendering bottleneck while dragging/playing
   const lastStateUpdateTimeRef = useRef(0);
@@ -748,16 +767,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     rebuildClipLayoutCache();
     const targetTime = getTimeFromPx(clickX);
     
-    // Check clip selection
-    const cache = clipLayoutCacheRef.current;
-    for (const item of cache) {
-      if (clickX >= item.offsetLeft && clickX <= item.offsetLeft + item.offsetWidth) {
-        checkAndSelectSegment(item.id);
-        break;
-      }
-    }
-
-    // Immediately update DOM & State
+    // Immediately update DOM & State (updatePlayheadDOM handles active segment selection)
     updatePlayheadDOM(targetTime);
     setCurrentTime(targetTime);
 
@@ -771,7 +781,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         ws.setTime(targetTime);
       }
     }
-  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, checkAndSelectSegment, totalDuration, startPlaybackFrom]);
+  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, totalDuration, startPlaybackFrom]);
 
   // Handle timeline click (single click to seek)
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -815,17 +825,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       const clickX = clientX - rowRect.left + scrollL;
       const targetTime = getTimeFromPx(clickX);
       
-      // Zero-lag visual updates
+      // Zero-lag visual updates (updatePlayheadDOM handles active segment selection)
       updatePlayheadDOM(targetTime);
-
-      // Track active segment bounds
-      const cache = clipLayoutCacheRef.current;
-      for (const item of cache) {
-        if (clickX >= item.offsetLeft && clickX <= item.offsetLeft + item.offsetWidth) {
-          checkAndSelectSegment(item.id);
-          break;
-        }
-      }
 
       // Seek WaveSurfer audio engine
       const ws = wavesurferRef.current;
