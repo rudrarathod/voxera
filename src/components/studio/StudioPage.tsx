@@ -1048,7 +1048,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     } catch (err: any) {
       console.error('Failed to merge audio composition:', err);
       // Fallback: download text composition manifest
-      onShowToast('Export fallback', 'Real audio absent. Downloading script manifest text.', 'warning');
+      onShowToast('Export fallback', 'Real audio absent. Downloading script manifest text.', 'info');
       const infoText = `Voxera Script Composition Export\n` +
                        `================================\n` +
                        `Segments: ${segments.length}\n` +

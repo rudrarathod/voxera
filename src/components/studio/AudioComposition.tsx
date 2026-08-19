@@ -105,6 +105,182 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     });
   }, [segments]);
 
+  // DOM Refs for high-frequency playhead positioning without React re-renders
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const playheadTimeRef = useRef<HTMLDivElement>(null);
+  
+  // Dragging state
+  const isDraggingRef = useRef(false);
+
+  // Cache of timeline clip boundaries in pixels & seconds
+  const clipLayoutCacheRef = useRef<{
+    id: string;
+    offsetLeft: number;
+    offsetWidth: number;
+    durationSec: number;
+    visualDuration: number;
+    startRealTime: number;
+    startVisualTime: number;
+  }[]>([]);
+
+  // Ref tracking current playback state to avoid callback dependencies
+  const isPlayingRef = useRef(false);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  // Track the last segment selection to throttle callback fires
+  const lastSelectedIdRef = useRef<string | null>(selectedSegmentId);
+  useEffect(() => {
+    lastSelectedIdRef.current = selectedSegmentId;
+  }, [selectedSegmentId]);
+
+  const checkAndSelectSegment = useCallback((id: string) => {
+    if (lastSelectedIdRef.current !== id) {
+      onSelectSegment(id);
+      lastSelectedIdRef.current = id;
+    }
+  }, [onSelectSegment]);
+
+  // Rebuild the cached boundaries for O(1) playhead position lookups
+  const rebuildClipLayoutCache = useCallback(() => {
+    if (!timelineRef.current) return;
+    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
+    if (!clipsRow) return;
+
+    const clipEls = clipsRow.querySelectorAll('[data-clip-id]');
+    const newCache = [];
+    let realAcc = 0;
+    let visualAcc = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const el = clipEls[i] as HTMLElement | undefined;
+      if (!el) continue;
+
+      const realDur = seg.durationSec;
+      const visualDur = seg.durationSec > 0 ? seg.durationSec : 5;
+
+      newCache.push({
+        id: seg.id,
+        offsetLeft: el.offsetLeft,
+        offsetWidth: el.offsetWidth,
+        durationSec: realDur,
+        visualDuration: visualDur,
+        startRealTime: realAcc,
+        startVisualTime: visualAcc,
+      });
+
+      realAcc += realDur;
+      visualAcc += visualDur;
+    }
+    clipLayoutCacheRef.current = newCache;
+  }, [segments]);
+
+  // Translate timeline time into pixel left offset on the clip track
+  const getPlayheadPxFromTime = useCallback((time: number) => {
+    const cache = clipLayoutCacheRef.current;
+    if (cache.length === 0) return 8; // padding offset default
+
+    let lastValidPx = 8;
+    for (let i = 0; i < cache.length; i++) {
+      const item = cache[i];
+      const realDur = item.durationSec;
+
+      if (realDur > 0) {
+        if (time >= item.startRealTime && time <= item.startRealTime + realDur) {
+          const progress = (time - item.startRealTime) / realDur;
+          return item.offsetLeft + progress * item.offsetWidth;
+        }
+        lastValidPx = item.offsetLeft + item.offsetWidth;
+      }
+    }
+    return lastValidPx;
+  }, []);
+
+  // Translate pixel offset back into timeline seconds (for dragging/scrubbing clicks)
+  const getTimeFromPx = useCallback((pixelX: number) => {
+    const cache = clipLayoutCacheRef.current;
+    if (cache.length === 0) return 0;
+
+    let lastRealTime = 0;
+    for (let i = 0; i < cache.length; i++) {
+      const item = cache[i];
+      const elLeft = item.offsetLeft;
+      const elRight = elLeft + item.offsetWidth;
+
+      if (pixelX >= elLeft && pixelX <= elRight) {
+        if (item.durationSec > 0) {
+          const progressRatio = item.offsetWidth > 0 ? (pixelX - elLeft) / item.offsetWidth : 0;
+          return item.startRealTime + progressRatio * item.durationSec;
+        } else {
+          return item.startRealTime;
+        }
+      }
+      if (item.durationSec > 0) {
+        lastRealTime = item.startRealTime + item.durationSec;
+      }
+    }
+
+    if (cache.length > 0) {
+      const firstItem = cache[0];
+      if (pixelX < firstItem.offsetLeft) return 0;
+    }
+    return lastRealTime;
+  }, []);
+
+  // Directly update playhead and time badge in the DOM (60 FPS) and auto-scroll timeline
+  const updatePlayheadDOM = useCallback((time: number) => {
+    const px = getPlayheadPxFromTime(time);
+    
+    if (playheadRef.current) {
+      playheadRef.current.style.left = `${px}px`;
+    }
+    
+    if (playheadTimeRef.current) {
+      playheadTimeRef.current.innerText = formatTime(time);
+    }
+
+    // Auto-scroll timeline to follow playhead smoothly during playback
+    if (isPlayingRef.current && timelineRef.current && !isDraggingRef.current) {
+      const timeline = timelineRef.current;
+      const viewportWidth = timeline.clientWidth;
+      const currentScroll = timeline.scrollLeft;
+      const pad = 60; // scroll boundary padding
+
+      if (px > currentScroll + viewportWidth - pad) {
+        timeline.scrollTo({
+          left: px - viewportWidth / 2,
+          behavior: 'smooth'
+        });
+      } else if (px < currentScroll + pad) {
+        timeline.scrollTo({
+          left: Math.max(0, px - viewportWidth / 2),
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [getPlayheadPxFromTime, formatTime]);
+
+  // Throttled React state updates to prevent component rendering bottleneck while dragging/playing
+  const lastStateUpdateTimeRef = useRef(0);
+  const throttledSetCurrentTime = useCallback((time: number, force = false) => {
+    const now = performance.now();
+    if (force || now - lastStateUpdateTimeRef.current > 150) {
+      setCurrentTime(time);
+      lastStateUpdateTimeRef.current = now;
+    }
+  }, []);
+
+  // Keep callback refs so they are always fresh in wavesurfer listeners
+  const updatePlayheadDOMRef = useRef(updatePlayheadDOM);
+  const throttledSetCurrentTimeRef = useRef(throttledSetCurrentTime);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+
+  useEffect(() => { updatePlayheadDOMRef.current = updatePlayheadDOM; }, [updatePlayheadDOM]);
+  useEffect(() => { throttledSetCurrentTimeRef.current = throttledSetCurrentTime; }, [throttledSetCurrentTime]);
+  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
+
   // Helper to play draft voice reference instead of browser synthesis
   const playDraftPreview = useCallback((seg: AudioSegment, onDone: () => void) => {
     const voice = voices.find(v => v.id === seg.voiceId || v.name.toLowerCase() === seg.voiceName.toLowerCase());
@@ -178,8 +354,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       onPlayStateChange?.(false);
     });
     ws.on('timeupdate', (time: number) => {
-      setCurrentTime(time);
-      onTimeUpdate?.(time);
+      updatePlayheadDOMRef.current?.(time);
+      throttledSetCurrentTimeRef.current?.(time);
+      onTimeUpdateRef.current?.(time);
     });
     ws.on('ready', () => {
       const dur = ws.getDuration();
@@ -293,6 +470,10 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
               if (seg.id === snapshotSegId && dur > 0) {
                 const restoredTime = newAcc + snapshotProgress * dur;
                 if (newDur > 0) ws.setTime(Math.min(restoredTime, newDur));
+                
+                // Refresh cached measurements before updating DOM
+                rebuildClipLayoutCache();
+                updatePlayheadDOM(restoredTime);
                 setCurrentTime(restoredTime);
                 return;
               }
@@ -306,6 +487,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
           for (const seg of segments) {
             if (seg.durationSec > 0) {
               if (newDur > 0) ws.setTime(Math.min(firstAudioAcc, newDur));
+              
+              rebuildClipLayoutCache();
+              updatePlayheadDOM(firstAudioAcc);
               setCurrentTime(firstAudioAcc);
               return;
             }
@@ -335,15 +519,15 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   // Animate playhead via requestAnimationFrame while playing
   useEffect(() => {
     if (!isPlaying) return;
-    // Don't override currentTime while user is dragging
     if (isDraggingRef.current) return;
 
     let raf: number;
     const tick = () => {
-      // Try WaveSurfer first
       const ws = wavesurferRef.current;
       if (ws && ws.getDuration() > 0) {
-        setCurrentTime(ws.getCurrentTime());
+        const time = ws.getCurrentTime();
+        updatePlayheadDOM(time);
+        throttledSetCurrentTime(time);
       } else {
         // Fallback: track AudioEngine's HTMLAudioElement
         const segStartTime = (() => {
@@ -352,68 +536,16 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
           return offset ? offset.start : 0;
         })();
         const aeTime = AudioEngine.getCurrentTime();
-        setCurrentTime(segStartTime + aeTime);
+        const time = segStartTime + aeTime;
+        updatePlayheadDOM(time);
+        throttledSetCurrentTime(time);
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, playingSegmentId, segmentOffsets]);
-
-  // Auto-scroll timeline to follow playhead smoothly during audio playback
-  useEffect(() => {
-    if (!isPlaying || !timelineRef.current || isDraggingRef.current) return;
-
-    const timeline = timelineRef.current;
-    const clipsRow = timeline.querySelector('[data-clips-row]') as HTMLElement | null;
-    if (!clipsRow) return;
-
-    const clipEls = clipsRow.querySelectorAll('[data-clip-id]');
-    if (clipEls.length === 0) return;
-
-    const effTotal = totalDuration > 0 ? totalDuration : totalSegmentDuration;
-    if (effTotal <= 0) return;
-
-    let realAcc = 0;
-    let playheadPx = 0;
-    let found = false;
-
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const realDur = seg.durationSec; // 0 for drafts — skip them
-      const el = clipEls[i] as HTMLElement | undefined;
-      if (!el) continue;
-      if (realDur <= 0) continue; // Skip draft segments
-
-      if (currentTime >= realAcc && currentTime < realAcc + realDur) {
-        const progress = (currentTime - realAcc) / realDur;
-        playheadPx = el.offsetLeft + progress * el.offsetWidth;
-        found = true;
-        break;
-      }
-      realAcc += realDur;
-    }
-
-    if (!found) return;
-
-    // Check if playhead is near or outside viewport bounds
-    const viewportWidth = timeline.clientWidth;
-    const currentScroll = timeline.scrollLeft;
-    const pad = 60; // Padding threshold before auto-scroll triggers
-
-    if (playheadPx > currentScroll + viewportWidth - pad) {
-      timeline.scrollTo({
-        left: playheadPx - viewportWidth / 2,
-        behavior: 'smooth'
-      });
-    } else if (playheadPx < currentScroll + pad) {
-      timeline.scrollTo({
-        left: Math.max(0, playheadPx - viewportWidth / 2),
-        behavior: 'smooth'
-      });
-    }
-  }, [currentTime, isPlaying, totalDuration, totalSegmentDuration, segments]);
+  }, [isPlaying, playingSegmentId, segmentOffsets, updatePlayheadDOM, throttledSetCurrentTime]);
 
   // Playback toggle
   const handleTogglePlay = useCallback(() => {
@@ -523,9 +655,13 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     if (offset) {
       const seekRatio = offset.start / totalDuration;
       ws.seekTo(Math.max(0, Math.min(1, seekRatio)));
+      
+      // Update DOM immediately
+      updatePlayheadDOM(offset.start);
+      setCurrentTime(offset.start);
     }
     onSelectSegment(segId);
-  }, [totalDuration, segmentOffsets, onSelectSegment]);
+  }, [totalDuration, segmentOffsets, onSelectSegment, updatePlayheadDOM]);
 
   // Play the timeline continuously from the specified segment start
   const playSegmentOnly = useCallback((segId: string, e: React.MouseEvent) => {
@@ -599,93 +735,63 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     ? visualOffsets[visualOffsets.length - 1].end
     : 0;
 
-  // Map playhead smoothly to visual segment dimensions
-  // Drafts (durationSec=0) have visual width but 0 real time — playhead skips over them
-  const getPlayheadLeftPct = useCallback(() => {
-    if (segments.length === 0 || totalVisualDuration <= 0) return 0;
+  // Rebuild cache when layout-affecting properties change
+  useEffect(() => {
+    const handle = requestAnimationFrame(() => {
+      rebuildClipLayoutCache();
+      updatePlayheadDOM(currentTime);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [segments, timelineZoom, rebuildClipLayoutCache, updatePlayheadDOM, currentTime]);
 
-    let realAcc = 0;
-    let visualAcc = 0;
+  // Window resize handler to maintain accurate dimensions
+  useEffect(() => {
+    const handleResize = () => {
+      rebuildClipLayoutCache();
+      updatePlayheadDOM(currentTime);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [rebuildClipLayoutCache, currentTime, updatePlayheadDOM]);
 
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const realDuration = seg.durationSec; // 0 for drafts
-      const visualDuration = seg.durationSec > 0 ? seg.durationSec : 5;
-
-      if (realDuration > 0 && currentTime >= realAcc && currentTime < realAcc + realDuration) {
-        const segmentProgress = (currentTime - realAcc) / realDuration;
-        const visualPosition = visualAcc + segmentProgress * visualDuration;
-        return Math.min(100, Math.max(0, (visualPosition / totalVisualDuration) * 100));
+  // Shared: seek to a pixel X offset within the clips row using pre-cached boundaries
+  const seekToPx = useCallback((clickX: number) => {
+    rebuildClipLayoutCache();
+    const targetTime = getTimeFromPx(clickX);
+    
+    // Check clip selection
+    const cache = clipLayoutCacheRef.current;
+    for (const item of cache) {
+      if (clickX >= item.offsetLeft && clickX <= item.offsetLeft + item.offsetWidth) {
+        checkAndSelectSegment(item.id);
+        break;
       }
-      realAcc += realDuration;
-      visualAcc += visualDuration;
     }
 
-    // Fallback: playhead is at or past the end — position at end of last audio segment
-    const lastAudioIdx = [...segments].reverse().findIndex(s => s.durationSec > 0);
-    if (lastAudioIdx >= 0) {
-      let vAcc = 0;
-      const actualIdx = segments.length - 1 - lastAudioIdx;
-      for (let i = 0; i <= actualIdx; i++) {
-        vAcc += segments[i].durationSec > 0 ? segments[i].durationSec : 5;
-      }
-      return Math.min(100, Math.max(0, (vAcc / totalVisualDuration) * 100));
+    // Immediately update DOM & State
+    updatePlayheadDOM(targetTime);
+    setCurrentTime(targetTime);
+
+    // Seek WaveSurfer
+    const ws = wavesurferRef.current;
+    if (ws && totalDuration > 0) {
+      ws.seekTo(Math.max(0, Math.min(1, targetTime / totalDuration)));
     }
-    return 0;
-  }, [currentTime, totalVisualDuration, segments]);
-
-  // Dragging state
-  const isDraggingRef = useRef(false);
-
-  // Shared: seek to a pixel X offset within the clips row
-  const seekToX = useCallback((clientX: number) => {
-    if (!timelineRef.current) return;
-    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
-    if (!clipsRow) return;
-
-    const clipEls = clipsRow.querySelectorAll('[data-clip-id]');
-    if (clipEls.length === 0) return;
-
-    const rowRect = clipsRow.getBoundingClientRect();
-    const clickX = clientX - rowRect.left + clipsRow.scrollLeft;
-
-    let realAcc = 0;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const realDuration = seg.durationSec;
-      const el = clipEls[i] as HTMLElement | undefined;
-      if (!el) continue;
-
-      const elLeft = el.offsetLeft;
-      const elRight = elLeft + el.offsetWidth;
-
-      if (clickX >= elLeft && clickX <= elRight) {
-        onSelectSegment(seg.id);
-
-        if (realDuration > 0) {
-          const progressRatio = el.offsetWidth > 0 ? (clickX - elLeft) / el.offsetWidth : 0;
-          const targetRealTime = realAcc + progressRatio * realDuration;
-
-          setCurrentTime(targetRealTime);
-
-          const ws = wavesurferRef.current;
-          if (ws && totalDuration > 0) {
-            ws.seekTo(Math.max(0, Math.min(1, targetRealTime / totalDuration)));
-          }
-        }
-        return;
-      }
-      realAcc += realDuration;
-    }
-  }, [totalDuration, segments, onSelectSegment]);
+  }, [rebuildClipLayoutCache, getTimeFromPx, updatePlayheadDOM, checkAndSelectSegment, totalDuration]);
 
   // Handle timeline click (single click to seek)
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!timelineRef.current || totalVisualDuration <= 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
-    seekToX(e.clientX);
-  }, [totalVisualDuration, seekToX]);
+
+    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
+    if (!clipsRow) return;
+
+    const rowRect = clipsRow.getBoundingClientRect();
+    const clickX = e.clientX - rowRect.left + clipsRow.scrollLeft;
+    seekToPx(clickX);
+  }, [totalVisualDuration, seekToPx]);
 
   // Handle drag on timeline for scrubbing the playhead with smooth edge-scrolling
   const handleTimelineMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -696,14 +802,48 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     e.preventDefault();
     isDraggingRef.current = true;
 
-    // Pause playback while dragging
+    // Recalculate layout metrics on drag start
+    const clipsRow = timelineRef.current.querySelector('[data-clips-row]') as HTMLElement | null;
+    if (!clipsRow) return;
+    let rowRect = clipsRow.getBoundingClientRect();
+    rebuildClipLayoutCache();
+
+    // Pause playback while scrubbing
     const wasPlaying = isPlaying;
     if (wasPlaying) {
       wavesurferRef.current?.pause();
       AudioEngine.stop();
     }
 
-    seekToX(e.clientX);
+    const processDrag = (clientX: number) => {
+      if (!timelineRef.current) return;
+      const scrollL = clipsRow.scrollLeft;
+      const clickX = clientX - rowRect.left + scrollL;
+      const targetTime = getTimeFromPx(clickX);
+      
+      // Zero-lag visual updates
+      updatePlayheadDOM(targetTime);
+
+      // Track active segment bounds
+      const cache = clipLayoutCacheRef.current;
+      for (const item of cache) {
+        if (clickX >= item.offsetLeft && clickX <= item.offsetLeft + item.offsetWidth) {
+          checkAndSelectSegment(item.id);
+          break;
+        }
+      }
+
+      // Seek WaveSurfer audio engine
+      const ws = wavesurferRef.current;
+      if (ws && totalDuration > 0) {
+        ws.seekTo(Math.max(0, Math.min(1, targetTime / totalDuration)));
+      }
+
+      // Throttle React state refresh
+      throttledSetCurrentTime(targetTime);
+    };
+
+    processDrag(e.clientX);
 
     let currentMouseX = e.clientX;
     let dragRafId: number | null = null;
@@ -713,19 +853,19 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
       const timeline = timelineRef.current;
       const rect = timeline.getBoundingClientRect();
-      const edgeMargin = 45; // Margin near edges to trigger scroll
+      const edgeMargin = 45;
       const maxScrollSpeed = 12;
 
+      rowRect = clipsRow.getBoundingClientRect();
+
       if (currentMouseX > rect.right - edgeMargin) {
-        // Dragging near right edge -> scroll right
         const intensity = Math.min(1, (currentMouseX - (rect.right - edgeMargin)) / edgeMargin);
         timeline.scrollLeft += Math.max(2, Math.round(intensity * maxScrollSpeed));
-        seekToX(currentMouseX);
+        processDrag(currentMouseX);
       } else if (currentMouseX < rect.left + edgeMargin) {
-        // Dragging near left edge -> scroll left
         const intensity = Math.min(1, ((rect.left + edgeMargin) - currentMouseX) / edgeMargin);
         timeline.scrollLeft -= Math.max(2, Math.round(intensity * maxScrollSpeed));
-        seekToX(currentMouseX);
+        processDrag(currentMouseX);
       }
 
       dragRafId = requestAnimationFrame(dragScrollTick);
@@ -736,7 +876,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     const onMouseMove = (moveE: MouseEvent) => {
       if (!isDraggingRef.current) return;
       currentMouseX = moveE.clientX;
-      seekToX(moveE.clientX);
+      processDrag(moveE.clientX);
     };
 
     const onMouseUp = () => {
@@ -749,7 +889,11 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
 
-      // Resume playback if it was playing before drag
+      // Commit final time on release
+      const scrollL = clipsRow.scrollLeft;
+      const finalTime = getTimeFromPx(currentMouseX - rowRect.left + scrollL);
+      setCurrentTime(finalTime);
+
       if (wasPlaying) {
         wavesurferRef.current?.play().catch(() => {});
       }
@@ -759,7 +903,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [totalVisualDuration, isPlaying, seekToX]);
+  }, [totalVisualDuration, isPlaying, totalDuration, getTimeFromPx, updatePlayheadDOM, throttledSetCurrentTime, rebuildClipLayoutCache, checkAndSelectSegment]);
 
   const startEdit = (seg: AudioSegment, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1010,59 +1154,28 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
             {/* Clips Row */}
             <div className="flex items-stretch p-2 gap-1.5" data-clips-row>
-              {/* DAW Playhead — pixel positioned over clip row */}
-              {segments.length > 0 && (() => {
-                const playheadPx = (() => {
-                  const clipsRow = timelineRef.current?.querySelector('[data-clips-row]');
-                  if (!clipsRow) return getPlayheadLeftPct() + '%';
-
-                  const clipEls = clipsRow.querySelectorAll('[data-clip-id]');
-                  if (clipEls.length === 0) return getPlayheadLeftPct() + '%';
-
-                  const effTotal = totalDuration > 0 ? totalDuration : totalSegmentDuration;
-                  if (effTotal <= 0) return '8px'; // padding offset
-
-                  let realAcc = 0;
-                  for (let i = 0; i < segments.length; i++) {
-                    const seg = segments[i];
-                    const realDur = seg.durationSec; // 0 for drafts
-                    const el = clipEls[i] as HTMLElement | undefined;
-                    if (!el) continue;
-                    if (realDur <= 0) continue; // Skip draft segments
-
-                    if (currentTime >= realAcc && currentTime < realAcc + realDur) {
-                      const progress = (currentTime - realAcc) / realDur;
-                      return `${el.offsetLeft + progress * el.offsetWidth}px`;
-                    }
-                    realAcc += realDur;
-                  }
-                  // Past end — put at end of last clip
-                  const lastEl = clipEls[clipEls.length - 1] as HTMLElement | undefined;
-                  if (lastEl) return `${lastEl.offsetLeft + lastEl.offsetWidth}px`;
-                  return getPlayheadLeftPct() + '%';
-                })();
-
-                return (
+              {/* DAW Playhead — pixel positioned over clip row (Direct DOM access via ref) */}
+              <div
+                ref={playheadRef}
+                className="absolute top-0 bottom-0 w-[2px] bg-purple-500 z-30 pointer-events-none"
+                style={{
+                  left: '8px',
+                  boxShadow: '0 0 6px rgba(168, 85, 247, 0.7), 0 0 12px rgba(168, 85, 247, 0.3)',
+                  display: segments.length > 0 ? 'block' : 'none',
+                }}
+              >
+                {/* Time badge inside the ruler */}
+                <div className="absolute top-0.5 left-1/2 -translate-x-1/2">
                   <div
-                    className={`absolute top-0 bottom-0 w-[2px] bg-purple-500 z-30 pointer-events-none ${
-                      isPlaying ? '' : ''
-                    }`}
-                    style={{
-                      left: playheadPx,
-                      boxShadow: '0 0 6px rgba(168, 85, 247, 0.7), 0 0 12px rgba(168, 85, 247, 0.3)',
-                    }}
+                    ref={playheadTimeRef}
+                    className="px-1 py-px rounded-sm bg-purple-600 text-white text-[8px] font-mono font-bold shadow-sm whitespace-nowrap leading-tight"
                   >
-                    {/* Time badge inside the ruler */}
-                    <div className="absolute top-0.5 left-1/2 -translate-x-1/2">
-                      <div className="px-1 py-px rounded-sm bg-purple-600 text-white text-[8px] font-mono font-bold shadow-sm whitespace-nowrap leading-tight">
-                        {formatTime(currentTime)}
-                      </div>
-                    </div>
-                    {/* Bottom glow dot */}
-                    <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
+                    {formatTime(currentTime)}
                   </div>
-                );
-              })()}
+                </div>
+                {/* Bottom glow dot */}
+                <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
+              </div>
 
             {/* Render Clip Blocks */}
             {visualOffsets.map((seg, idx) => {
