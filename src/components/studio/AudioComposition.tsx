@@ -101,13 +101,15 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     return `${mins.toString().padStart(2, '0')}:${rem.toString().padStart(2, '0')}`;
   };
 
-  // Calculate segment offsets from durations
-  const segmentOffsets = React.useMemo(() => {
+  // Calculate segment visual durations & offsets
+  const visualOffsets = React.useMemo(() => {
     let acc = 0;
     return segments.map((seg) => {
+      // Default to 5 seconds if not synthesized yet (so it has a visual box)
+      const duration = seg.durationSec > 0 ? seg.durationSec : 5;
       const start = acc;
-      acc += seg.durationSec;
-      return { ...seg, start, end: acc };
+      acc += duration;
+      return { ...seg, start, end: acc, visualDuration: duration };
     });
   }, [segments]);
 
@@ -200,15 +202,14 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     let lastValidPx = 8;
     for (let i = 0; i < cache.length; i++) {
       const item = cache[i];
-      const realDur = item.durationSec;
+      const itemStart = item.startVisualTime;
+      const itemEnd = itemStart + item.visualDuration;
 
-      if (realDur > 0) {
-        if (time >= item.startRealTime && time <= item.startRealTime + realDur) {
-          const progress = (time - item.startRealTime) / realDur;
-          return item.offsetLeft + progress * item.offsetWidth;
-        }
-        lastValidPx = item.offsetLeft + item.offsetWidth;
+      if (time >= itemStart && time <= itemEnd) {
+        const progress = item.visualDuration > 0 ? (time - itemStart) / item.visualDuration : 0;
+        return item.offsetLeft + progress * item.offsetWidth;
       }
+      lastValidPx = item.offsetLeft + item.offsetWidth;
     }
     return lastValidPx;
   }, []);
@@ -233,24 +234,14 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       const boundaryRight = nextItem ? (elRight + nextItem.offsetLeft) / 2 : elRight;
 
       if (pixelX <= boundaryRight) {
-        if (item.durationSec > 0) {
-          // Clamp click position within the actual clip width for progress calculations
-          const clampedX = Math.max(elLeft, Math.min(elRight, pixelX));
-          const progressRatio = item.offsetWidth > 0 ? (clampedX - elLeft) / item.offsetWidth : 0;
-          return item.startRealTime + progressRatio * item.durationSec;
-        } else {
-          return item.startRealTime;
-        }
+        const clampedX = Math.max(elLeft, Math.min(elRight, pixelX));
+        const progressRatio = item.offsetWidth > 0 ? (clampedX - elLeft) / item.offsetWidth : 0;
+        return item.startVisualTime + progressRatio * item.visualDuration;
       }
     }
 
-    // Default to the end of the last audio segment if clicked past the end
-    const lastAudioItem = [...cache].reverse().find(item => item.durationSec > 0);
-    if (lastAudioItem) {
-      return lastAudioItem.startRealTime + lastAudioItem.durationSec;
-    }
     const lastItem = cache[cache.length - 1];
-    return lastItem.startRealTime + lastItem.durationSec;
+    return lastItem.startVisualTime + lastItem.visualDuration;
   }, []);
 
   // Directly update playhead and time badge in the DOM (60 FPS) and auto-scroll timeline
@@ -266,22 +257,15 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     }
 
     // Auto-select the segment that the playhead is currently on
-    // Use segmentOffsets (real audio boundaries) for segments with audio,
-    // and visual cache positions for unsynthesized segments
     const cache = clipLayoutCacheRef.current;
     if (cache.length > 0) {
-      // Build a quick lookup using startRealTime accumulated durations
       let matched = false;
       for (let i = 0; i < cache.length; i++) {
         const item = cache[i];
-        const nextItem = cache[i + 1];
-        // Determine the end boundary: for segments with real audio use real end,
-        // for unsynthesized segments, use the start of the next real segment
-        const endBound = item.durationSec > 0
-          ? item.startRealTime + item.durationSec
-          : (nextItem ? nextItem.startRealTime : item.startRealTime + 0.01);
+        const itemStart = item.startVisualTime;
+        const itemEnd = itemStart + item.visualDuration;
 
-        if (time >= item.startRealTime && time < endBound) {
+        if (time >= itemStart && time < itemEnd) {
           checkAndSelectSegment(item.id);
           matched = true;
           break;
@@ -398,36 +382,36 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         setIsPlaying(true);
       }).catch((err) => {
         console.warn('WaveSurfer play failed, falling back to AudioEngine:', err);
-        const targetIdx = segmentOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
+        const targetIdx = visualOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
         const activeIdx = targetIdx !== -1 ? targetIdx : 0;
         const targetSeg = segments[activeIdx];
         if (targetSeg) {
-          const segOffset = Math.max(0, startTime - (segmentOffsets[activeIdx]?.start || 0));
+          const segOffset = Math.max(0, startTime - (visualOffsets[activeIdx]?.start || 0));
           playSegmentChain(activeIdx, segOffset);
         }
       });
     } else {
       // Fallback if WaveSurfer composition isn't loaded (play segment chain continuously)
-      const targetIdx = segmentOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
+      const targetIdx = visualOffsets.findIndex((s) => startTime >= s.start && startTime <= s.end);
       const activeIdx = targetIdx !== -1 ? targetIdx : 0;
       const targetSeg = segments[activeIdx];
       if (targetSeg) {
-        const segOffset = Math.max(0, startTime - (segmentOffsets[activeIdx]?.start || 0));
+        const segOffset = Math.max(0, startTime - (visualOffsets[activeIdx]?.start || 0));
         playSegmentChain(activeIdx, segOffset);
       }
     }
-  }, [segments, segmentOffsets, totalDuration, playDraftPreview]);
+  }, [segments, visualOffsets, totalDuration, playDraftPreview]);
 
-  const totalSegmentDuration = segmentOffsets.length > 0
-    ? segmentOffsets[segmentOffsets.length - 1].end
+  const totalSegmentDuration = visualOffsets.length > 0
+    ? visualOffsets[visualOffsets.length - 1].end
     : 0;
 
   // Determine active segment based on currentTime
   const activeSegment = React.useMemo(() => {
     if (segments.length === 0) return null;
-    const found = segmentOffsets.find((seg) => currentTime >= seg.start && currentTime < seg.end);
+    const found = visualOffsets.find((seg) => currentTime >= seg.start && currentTime < seg.end);
     return found || segments.find((s) => s.id === selectedSegmentId) || segments[0];
-  }, [currentTime, segmentOffsets, segments, selectedSegmentId]);
+  }, [currentTime, visualOffsets, segments, selectedSegmentId]);
 
   // Build a fingerprint of segment audio URLs to detect when we need to re-merge
   const currentFingerprint = segments
@@ -649,7 +633,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         // Fallback: track AudioEngine's HTMLAudioElement
         const segStartTime = (() => {
           if (!playingSegmentId) return 0;
-          const offset = segmentOffsets.find(s => s.id === playingSegmentId);
+          const offset = visualOffsets.find(s => s.id === playingSegmentId);
           return offset ? offset.start : 0;
         })();
         const aeTime = AudioEngine.getCurrentTime();
@@ -662,7 +646,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     raf = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, playingSegmentId, segmentOffsets, updatePlayheadDOM, throttledSetCurrentTime]);
+  }, [isPlaying, playingSegmentId, visualOffsets, updatePlayheadDOM, throttledSetCurrentTime]);
 
   // Playback toggle
   const handleTogglePlay = useCallback(() => {
@@ -675,7 +659,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       } else {
         const aeTime = AudioEngine.getCurrentTime();
         if (aeTime > 0 && playingSegmentId) {
-          const offset = segmentOffsets.find((s) => s.id === playingSegmentId);
+          const offset = visualOffsets.find((s) => s.id === playingSegmentId);
           if (offset) setCurrentTime(offset.start + aeTime);
         }
       }
@@ -695,7 +679,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     }
 
     startPlaybackFrom(resumeTime);
-  }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, totalSegmentDuration, startPlaybackFrom]);
+  }, [isPlaying, totalDuration, currentTime, playingSegmentId, visualOffsets, totalSegmentDuration, startPlaybackFrom]);
 
   // Handle global play/pause toggle keyboard shortcut (Space)
   useEffect(() => {
@@ -710,7 +694,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   const handleSeekToSegment = useCallback((segId: string) => {
     const ws = wavesurferRef.current;
     if (!ws || totalDuration <= 0) return;
-    const offset = segmentOffsets.find((s) => s.id === segId);
+    const offset = visualOffsets.find((s) => s.id === segId);
     if (offset) {
       ws.setTime(offset.start);
       
@@ -723,12 +707,12 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       }
     }
     onSelectSegment(segId);
-  }, [totalDuration, segmentOffsets, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
+  }, [totalDuration, visualOffsets, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
 
   // Play the timeline continuously from the specified segment start
   const playSegmentOnly = useCallback((segId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const offset = segmentOffsets.find((s) => s.id === segId);
+    const offset = visualOffsets.find((s) => s.id === segId);
     if (!offset) return;
 
     // If we are currently playing inside the clicked segment, pause it!
@@ -759,19 +743,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
     // Start playback from start of segment
     startPlaybackFrom(offset.start);
-  }, [isPlaying, playingSegmentId, activeSegment, segments, segmentOffsets, totalDuration, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
-
-  // Calculate segment visual durations & offsets
-  const visualOffsets = React.useMemo(() => {
-    let acc = 0;
-    return segments.map((seg) => {
-      // Default to 5 seconds if not synthesized yet (so it has a visual box)
-      const duration = seg.durationSec > 0 ? seg.durationSec : 5;
-      const start = acc;
-      acc += duration;
-      return { ...seg, start, end: acc, visualDuration: duration };
-    });
-  }, [segments]);
+  }, [isPlaying, playingSegmentId, activeSegment, segments, visualOffsets, totalDuration, onSelectSegment, updatePlayheadDOM, startPlaybackFrom]);
 
   const totalVisualDuration = visualOffsets.length > 0
     ? visualOffsets[visualOffsets.length - 1].end
@@ -827,7 +799,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     if (!clipsRow) return;
 
     const rowRect = clipsRow.getBoundingClientRect();
-    const clickX = e.clientX - rowRect.left + clipsRow.scrollLeft;
+    const clickX = e.clientX - rowRect.left + timelineRef.current.scrollLeft;
     seekToPx(clickX);
   }, [totalVisualDuration, seekToPx]);
 
@@ -855,7 +827,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
 
     const processDrag = (clientX: number) => {
       if (!timelineRef.current) return;
-      const scrollL = clipsRow.scrollLeft;
+      const scrollL = timelineRef.current.scrollLeft;
       const clickX = clientX - rowRect.left + scrollL;
       const targetTime = getTimeFromPx(clickX);
       
@@ -919,7 +891,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
       document.body.style.userSelect = '';
 
       // Commit final time on release
-      const scrollL = clipsRow.scrollLeft;
+      const scrollL = timelineRef.current ? timelineRef.current.scrollLeft : 0;
       const finalTime = getTimeFromPx(currentMouseX - rowRect.left + scrollL);
       setCurrentTime(finalTime);
 
