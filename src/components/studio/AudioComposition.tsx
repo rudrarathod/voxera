@@ -30,6 +30,7 @@ interface AudioCompositionProps {
   selectedSegmentId: string | null;
   onSelectSegment: (id: string) => void;
   onAddGeneration: () => void;
+  onInsertSegment?: (index: number) => void;
   onDeleteSegment: (id: string) => void;
   onRegenerateSegment: (id: string) => void;
   onUpdateSegmentText: (id: string, newText: string) => void;
@@ -46,6 +47,7 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   selectedSegmentId,
   onSelectSegment,
   onAddGeneration,
+  onInsertSegment,
   onDeleteSegment,
   onRegenerateSegment,
   onUpdateSegmentText,
@@ -439,9 +441,40 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
     AudioEngine.stop();
     setPlayingSegmentId(null);
 
+    // Helper to play remaining segments in sequence using AudioEngine
+    const playSegmentChain = (startIndex: number, offsetWithinSegment: number = 0) => {
+      if (startIndex >= segments.length) {
+        setIsPlaying(false);
+        setPlayingSegmentId(null);
+        return;
+      }
+
+      const currentSeg = segments[startIndex];
+      setPlayingSegmentId(currentSeg.id);
+      setIsPlaying(true);
+
+      const onDone = () => {
+        playSegmentChain(startIndex + 1, 0);
+      };
+
+      if (currentSeg.audioBlob) {
+        AudioEngine.playAudioFile(currentSeg.audioBlob, onDone, offsetWithinSegment);
+      } else if (currentSeg.audioUrl) {
+        fetch(currentSeg.audioUrl)
+          .then(r => r.blob())
+          .then(b => AudioEngine.playAudioFile(b, onDone, offsetWithinSegment))
+          .catch(() => {
+            playDraftPreview(currentSeg, onDone);
+          });
+      } else {
+        playDraftPreview(currentSeg, onDone);
+      }
+    };
+
     // Calculate effective start time
     let resumeTime = currentTime;
-    if (totalDuration > 0 && resumeTime >= totalDuration - 0.1) {
+    const effectiveTotal = totalDuration > 0 ? totalDuration : totalSegmentDuration;
+    if (effectiveTotal > 0 && resumeTime >= effectiveTotal - 0.1) {
       resumeTime = 0; // Restart if at end
       setCurrentTime(0);
     }
@@ -453,41 +486,25 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         setIsPlaying(true);
       }).catch((err) => {
         console.warn('WaveSurfer play failed, falling back to AudioEngine:', err);
-        const targetSeg = segmentOffsets.find((s) => resumeTime >= s.start && resumeTime <= s.end) || segments[0];
+        const targetIdx = segmentOffsets.findIndex((s) => resumeTime >= s.start && resumeTime <= s.end);
+        const activeIdx = targetIdx !== -1 ? targetIdx : 0;
+        const targetSeg = segments[activeIdx];
         if (targetSeg) {
-          setIsPlaying(true);
-          setPlayingSegmentId(targetSeg.id);
-          const segOffset = Math.max(0, resumeTime - targetSeg.start);
-          const onDone = () => { setIsPlaying(false); setPlayingSegmentId(null); };
-          if (targetSeg.audioBlob) {
-            AudioEngine.playAudioFile(targetSeg.audioBlob, onDone, segOffset);
-          } else if (targetSeg.audioUrl) {
-            fetch(targetSeg.audioUrl).then(r => r.blob()).then(b => AudioEngine.playAudioFile(b, onDone, segOffset)).catch(() => {
-              playDraftPreview(targetSeg, onDone);
-            });
-          }
+          const segOffset = Math.max(0, resumeTime - (segmentOffsets[activeIdx]?.start || 0));
+          playSegmentChain(activeIdx, segOffset);
         }
       });
     } else {
-      // Fallback if WaveSurfer composition isn't loaded
-      const targetSeg = segmentOffsets.find((s) => resumeTime >= s.start && resumeTime <= s.end) || segments[0];
+      // Fallback if WaveSurfer composition isn't loaded (play segment chain continuously)
+      const targetIdx = segmentOffsets.findIndex((s) => resumeTime >= s.start && resumeTime <= s.end);
+      const activeIdx = targetIdx !== -1 ? targetIdx : 0;
+      const targetSeg = segments[activeIdx];
       if (targetSeg) {
-        setIsPlaying(true);
-        setPlayingSegmentId(targetSeg.id);
-        const segOffset = Math.max(0, resumeTime - targetSeg.start);
-        const onDone = () => { setIsPlaying(false); setPlayingSegmentId(null); };
-        if (targetSeg.audioBlob) {
-          AudioEngine.playAudioFile(targetSeg.audioBlob, onDone, segOffset);
-        } else if (targetSeg.audioUrl) {
-          fetch(targetSeg.audioUrl).then(r => r.blob()).then(b => AudioEngine.playAudioFile(b, onDone, segOffset)).catch(() => {
-            playDraftPreview(targetSeg, onDone);
-          });
-        } else if (targetSeg.text) {
-          playDraftPreview(targetSeg, onDone);
-        }
+        const segOffset = Math.max(0, resumeTime - (segmentOffsets[activeIdx]?.start || 0));
+        playSegmentChain(activeIdx, segOffset);
       }
     }
-  }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, segments, playDraftPreview]);
+  }, [isPlaying, totalDuration, currentTime, playingSegmentId, segmentOffsets, segments, totalSegmentDuration, playDraftPreview]);
 
   // Handle global play/pause toggle keyboard shortcut (Space)
   useEffect(() => {
@@ -914,6 +931,20 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            const idx = segments.findIndex(s => s.id === seg.id);
+                            if (idx !== -1 && onInsertSegment) {
+                              onInsertSegment(idx);
+                            }
+                          }}
+                          className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-purple-500 transition-colors cursor-pointer"
+                          title="Insert blank segment before this"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             onRegenerateSegment(seg.id);
                           }}
                           className="p-1 rounded hover:bg-purple-600/10 text-[var(--text-muted)] hover:text-purple-500 transition-colors cursor-pointer"
@@ -1034,24 +1065,43 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
               })()}
 
             {/* Render Clip Blocks */}
-            {visualOffsets.map((seg) => {
+            {visualOffsets.map((seg, idx) => {
               const isSelected = selectedSegmentId === seg.id;
 
               return (
-                <div
-                  key={seg.id}
-                  data-clip-id={seg.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSeekToSegment(seg.id);
-                  }}
-                  style={{ width: `${Math.max(160, seg.visualDuration * timelineZoom)}px`, flexShrink: 0 }}
-                  className={`relative flex flex-col justify-between p-2 rounded-lg border transition-all cursor-pointer group/clip ${
-                    isSelected
-                      ? 'bg-purple-600/10 border-purple-500 shadow-xs ring-1 ring-purple-500/25'
-                      : 'bg-[var(--bg-card)]/40 border-[var(--border-main)] hover:border-purple-500/25'
-                  }`}
-                >
+                <React.Fragment key={seg.id}>
+                  {/* Insert indicator before this clip (index idx) */}
+                  <div className="relative group/insert flex items-center justify-center w-2 hover:w-8 transition-all duration-200 shrink-0 self-stretch z-20">
+                    {/* Visual vertical indicator line */}
+                    <div className="absolute w-[2px] h-[calc(100%-8px)] rounded-full bg-transparent group-hover/insert:bg-purple-500/35 transition-colors" />
+                    
+                    {/* Round circular insert segment button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onInsertSegment?.(idx);
+                      }}
+                      className="absolute opacity-0 group-hover/insert:opacity-100 transition-opacity w-5 h-5 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-transform z-30"
+                      title={`Insert segment before S0${seg.segmentNumber}`}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  <div
+                    data-clip-id={seg.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSeekToSegment(seg.id);
+                    }}
+                    style={{ width: `${Math.max(160, seg.visualDuration * timelineZoom)}px`, flexShrink: 0 }}
+                    className={`relative flex flex-col justify-between p-2 rounded-lg border transition-all cursor-pointer group/clip ${
+                      isSelected
+                        ? 'bg-purple-600/10 border-purple-500 shadow-xs ring-1 ring-purple-500/25'
+                        : 'bg-[var(--bg-card)]/40 border-[var(--border-main)] hover:border-purple-500/25'
+                    }`}
+                  >
                   {/* Processing overlay */}
                   {seg.isGenerating && (
                     <div className="absolute inset-0 z-10 rounded-lg bg-[var(--bg-card)]/80 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5">
@@ -1153,7 +1203,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                     )}
                   </div>
                 </div>
-              );
+              </React.Fragment>
+            );
             })}
 
               {/* Dotted '+' Button Card at end of clips row */}

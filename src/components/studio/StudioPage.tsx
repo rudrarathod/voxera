@@ -184,6 +184,17 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     }
   }, [selectedSegmentId]);
 
+  // Auto-sync scriptText changes back to the active segment in segments array (for draft auto-saving)
+  useEffect(() => {
+    if (!selectedSegmentId) return;
+    const activeSeg = segments.find((s) => s.id === selectedSegmentId);
+    if (activeSeg && activeSeg.text !== scriptText) {
+      setSegments((prev) =>
+        prev.map((s) => (s.id === selectedSegmentId ? { ...s, text: scriptText } : s))
+      );
+    }
+  }, [scriptText, selectedSegmentId]);
+
   // Handler for editing script text
   const handleScriptTextChange = (text: string) => {
     setScriptText(text);
@@ -306,9 +317,12 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         setSegments(updatedSegments);
         const targetSeg = segments.find((s) => s.id === selectedSegmentId);
         const segNum = targetSeg ? targetSeg.segmentNumber : 1;
+        const isFirstGen = targetSeg ? targetSeg.durationSec === 0 : true;
         onShowToast(
-          'Segment re-generated!',
-          `Segment 0${segNum} updated with backend WAV (${durationSec}s)`,
+          isFirstGen ? 'Speech segment generated!' : 'Segment re-generated!',
+          isFirstGen
+            ? `Segment 0${segNum} generated with backend WAV (${durationSec}s)`
+            : `Segment 0${segNum} updated with backend WAV (${durationSec}s)`,
           'success'
         );
       } else {
@@ -774,21 +788,66 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
   // Add Generation (Plus button on timeline)
   const handleAddGenerationClick = () => {
-    setSelectedSegmentId(null);
+    const nextSegNum = segments.length + 1;
+    const newSeg: AudioSegment = {
+      id: `seg-inserted-${Date.now()}`,
+      segmentNumber: nextSegNum,
+      text: '', // Start empty
+      voiceId: selectedVoice.id,
+      voiceName: selectedVoice.name,
+      language: language,
+      durationSec: 0.0,
+      createdAt: new Date().toISOString(),
+      waveformPeaks: Array.from({ length: 20 }, () => 0.2),
+    };
+
+    setSegments((prev) => [...prev, newSeg]);
+    setSelectedSegmentId(newSeg.id);
     setScriptText('');
-    onShowToast('New generation ready', 'Type your next text segment in the editor', 'info');
+    onShowToast('New segment added', `Added blank segment draft S0${nextSegNum}`, 'success');
   };
 
   // Segment Actions
   const handleDeleteSegment = (id: string) => {
     setSegments((prev) => {
       const remaining = prev.filter((s) => s.id !== id);
+      const reindexed = remaining.map((s, idx) => ({
+        ...s,
+        segmentNumber: idx + 1,
+      }));
       if (selectedSegmentId === id) {
-        setSelectedSegmentId(remaining.length > 0 ? remaining[0].id : null);
+        setSelectedSegmentId(reindexed.length > 0 ? reindexed[0].id : null);
       }
-      return remaining;
+      return reindexed;
     });
     onShowToast('Segment removed', 'Updated timeline composition', 'info');
+  };
+
+  const handleInsertSegment = (index: number) => {
+    const newSeg: AudioSegment = {
+      id: `seg-inserted-${Date.now()}`,
+      segmentNumber: index + 1,
+      text: '', // Start empty
+      voiceId: selectedVoice.id,
+      voiceName: selectedVoice.name,
+      language: language,
+      durationSec: 0.0,
+      createdAt: 'Just now',
+      waveformPeaks: Array.from({ length: 20 }, () => 0.2),
+    };
+
+    setSegments((prev) => {
+      const updated = [...prev];
+      updated.splice(index, 0, newSeg);
+      return updated.map((s, idx) => ({
+        ...s,
+        segmentNumber: idx + 1,
+      }));
+    });
+
+    setSelectedSegmentId(newSeg.id);
+    setScriptText('');
+    onShowToast('New segment inserted', `Added blank segment at position 0${index + 1}`, 'success');
   };
 
   const handleRegenerateSegment = async (id: string) => {
@@ -1138,6 +1197,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={(id) => setSelectedSegmentId(id)}
         onAddGeneration={handleAddGenerationClick}
+        onInsertSegment={handleInsertSegment}
         onDeleteSegment={handleDeleteSegment}
         onRegenerateSegment={handleRegenerateSegment}
         onUpdateSegmentText={handleUpdateSegmentText}

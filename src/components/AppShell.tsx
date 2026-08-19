@@ -143,9 +143,20 @@ export const AppShell: React.FC = () => {
             setSegments(reconstructed);
           }
         } else {
-          // Brand new session: Start with a clean slate in the studio workspace
-          await VoxeraDB.saveSegments([]);
-          setSegments([]);
+          // Brand new session: Start with a single blank draft segment in the studio workspace
+          const defaultSeg: AudioSegment = {
+            id: `seg-${Date.now()}`,
+            segmentNumber: 1,
+            text: 'Welcome to Voxera. This is a test of the AI voice studio.',
+            voiceId: INITIAL_VOICES[0].id,
+            voiceName: INITIAL_VOICES[0].name,
+            language: 'English',
+            durationSec: 0.0,
+            createdAt: new Date().toISOString(),
+            waveformPeaks: Array.from({ length: 20 }, () => 0.2),
+          };
+          await VoxeraDB.saveSegments([defaultSeg]);
+          setSegments([defaultSeg]);
           setProjectName('Untitled Composition');
           setCurrentProjectId(`proj-${Date.now()}`);
           if (typeof window !== 'undefined' && window.sessionStorage) {
@@ -416,7 +427,20 @@ export const AppShell: React.FC = () => {
         URL.revokeObjectURL(seg.audioUrl);
       }
     });
-    setSegments([]);
+
+    const defaultSeg: AudioSegment = {
+      id: `seg-${Date.now()}`,
+      segmentNumber: 1,
+      text: 'Welcome to Voxera. This is a test of the AI voice studio.',
+      voiceId: selectedVoice?.id || INITIAL_VOICES[0].id,
+      voiceName: selectedVoice?.name || INITIAL_VOICES[0].name,
+      language: language || 'English',
+      durationSec: 0.0,
+      createdAt: new Date().toISOString(),
+      waveformPeaks: Array.from({ length: 20 }, () => 0.2),
+    };
+
+    setSegments([defaultSeg]);
     setLanguage('English');
     setSpeed('1.0x');
     setExaggeration('0.5');
