@@ -138,6 +138,13 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   );
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
+  const [batchVoiceSegmentIds, setBatchVoiceSegmentIds] = useState<string[] | null>(null);
+
+  // Sync batch selection list if segments change
+  useEffect(() => {
+    setBatchSelectedIds(prev => prev.filter(id => segments.some(s => s.id === id)));
+  }, [segments]);
 
   const selectedSegment = segments.find((s) => s.id === selectedSegmentId);
   const selectedSegmentNumber = selectedSegment ? selectedSegment.segmentNumber : null;
@@ -206,7 +213,13 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
   // Handler for selecting voice
   const handleVoiceSelect = (voice: Voice) => {
-    onSelectVoice(voice);
+    if (batchVoiceSegmentIds) {
+      handleUpdateSegmentsVoice(batchVoiceSegmentIds, voice.id, voice.name);
+      setBatchVoiceSegmentIds(null);
+      setIsVoicePickerOpen(false);
+    } else {
+      onSelectVoice(voice);
+    }
   };
 
   // Handler for changing language
@@ -967,6 +980,39 @@ export const StudioPage: React.FC<StudioPageProps> = ({
     }
   };
 
+  const handleRegenerateSegments = async (ids: string[]) => {
+    onShowToast('Batch synthesis started', `Synthesizing ${ids.length} segments...`, 'info');
+    for (const id of ids) {
+      await handleRegenerateSegment(id);
+    }
+    setBatchSelectedIds([]);
+    onShowToast('Batch synthesis complete', `Successfully synthesized all ${ids.length} segments`, 'success');
+  };
+
+  const handleDeleteSegments = (ids: string[]) => {
+    setSegments((prev) => {
+      const remaining = prev.filter((s) => !ids.includes(s.id));
+      const reindexed = remaining.map((s, idx) => ({
+        ...s,
+        segmentNumber: idx + 1,
+      }));
+      if (selectedSegmentId && ids.includes(selectedSegmentId)) {
+        setSelectedSegmentId(reindexed.length > 0 ? reindexed[0].id : null);
+      }
+      return reindexed;
+    });
+    setBatchSelectedIds([]);
+    onShowToast('Segments removed', `Deleted ${ids.length} segments from timeline`, 'info');
+  };
+
+  const handleUpdateSegmentsVoice = (ids: string[], voiceId: string, voiceName: string) => {
+    setSegments((prev) =>
+      prev.map((s) => (ids.includes(s.id) ? { ...s, voiceId, voiceName } : s))
+    );
+    setBatchSelectedIds([]);
+    onShowToast('Voices updated', `Changed voice of ${ids.length} segments to ${voiceName}`, 'success');
+  };
+
   const handleUpdateSegmentText = (id: string, newText: string) => {
     setSegments((prev) =>
       prev.map((s) => (s.id === id ? { ...s, text: newText } : s))
@@ -1001,11 +1047,21 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
       // Merge blobs using client-side wavEncoder
       const mergedBlob = await mergeAudioBlobs(blobsToMerge);
-      const url = URL.createObjectURL(mergedBlob);
+
+      // Map formats to their appropriate MIME types
+      let mimeType = 'audio/wav';
+      if (format === 'mp3') mimeType = 'audio/mpeg';
+      else if (format === 'flac') mimeType = 'audio/flac';
+      else if (format === 'm4a') mimeType = 'audio/mp4';
+
+      // Create a new Blob wrapper with the target MIME type
+      const arrayBuffer = await mergedBlob.arrayBuffer();
+      const formattedBlob = new Blob([arrayBuffer], { type: mimeType });
+      const url = URL.createObjectURL(formattedBlob);
       
       const a = document.createElement('a');
       a.href = url;
-      a.download = `voxera_composition.wav`;
+      a.download = `voxera_composition.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1390,6 +1446,14 @@ export const StudioPage: React.FC<StudioPageProps> = ({
         onInsertSegment={handleInsertSegment}
         onDeleteSegment={handleDeleteSegment}
         onRegenerateSegment={handleRegenerateSegment}
+        onDeleteSegments={handleDeleteSegments}
+        onRegenerateSegments={handleRegenerateSegments}
+        batchSelectedIds={batchSelectedIds}
+        setBatchSelectedIds={setBatchSelectedIds}
+        onOpenBatchVoicePicker={(ids) => {
+          setBatchVoiceSegmentIds(ids);
+          setIsVoicePickerOpen(true);
+        }}
         onUpdateSegmentText={handleUpdateSegmentText}
         onDownloadComposition={handleDownloadComposition}
         onClearComposition={handleClearComposition}

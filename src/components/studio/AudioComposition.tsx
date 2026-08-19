@@ -33,6 +33,9 @@ interface AudioCompositionProps {
   onInsertSegment?: (index: number) => void;
   onDeleteSegment: (id: string) => void;
   onRegenerateSegment: (id: string) => void;
+  onDeleteSegments?: (ids: string[]) => void;
+  onRegenerateSegments?: (ids: string[]) => Promise<void>;
+  onOpenBatchVoicePicker?: (ids: string[]) => void;
   onUpdateSegmentText: (id: string, newText: string) => void;
   onDownloadComposition: (format: string) => void;
   onClearComposition: () => void;
@@ -41,6 +44,8 @@ interface AudioCompositionProps {
   onPlayStateChange?: (playing: boolean) => void;
   onExportProject?: () => void;
   onImportProject?: (file: File) => void;
+  batchSelectedIds?: string[];
+  setBatchSelectedIds?: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export const AudioComposition: React.FC<AudioCompositionProps> = ({
@@ -52,6 +57,9 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   onInsertSegment,
   onDeleteSegment,
   onRegenerateSegment,
+  onDeleteSegments,
+  onRegenerateSegments,
+  onOpenBatchVoicePicker,
   onUpdateSegmentText,
   onDownloadComposition,
   onClearComposition,
@@ -60,6 +68,8 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   onPlayStateChange,
   onExportProject,
   onImportProject,
+  batchSelectedIds = [],
+  setBatchSelectedIds = () => {},
 }) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isSegmentsCollapsed, setIsSegmentsCollapsed] = useState(true);
@@ -69,6 +79,35 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
   const [selectedFormat, setSelectedFormat] = useState<'wav' | 'mp3' | 'flac' | 'm4a'>('wav');
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [timelineZoom, setTimelineZoom] = useState(40); // Visual pixels per second for clips
+  const toggleBatchSelection = (id: string) => {
+    setBatchSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleBatchRegenerate = async () => {
+    if (batchSelectedIds.length === 0) return;
+    if (onRegenerateSegments) {
+      await onRegenerateSegments(batchSelectedIds);
+    } else {
+      for (const id of batchSelectedIds) {
+        onRegenerateSegment(id);
+      }
+      setBatchSelectedIds([]);
+    }
+  };
+
+  const handleBatchDelete = () => {
+    if (batchSelectedIds.length === 0) return;
+    if (onDeleteSegments) {
+      onDeleteSegments(batchSelectedIds);
+    } else {
+      for (const id of batchSelectedIds) {
+        onDeleteSegment(id);
+      }
+      setBatchSelectedIds([]);
+    }
+  };
 
   // WaveSurfer state
   const waveformRef = useRef<HTMLDivElement>(null);
@@ -926,13 +965,40 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
         <div className="border-b border-[var(--border-subtle)] px-4 py-3 md:px-6 max-h-[240px] overflow-y-auto animate-in slide-in-from-bottom duration-200">
           <div className="max-w-full space-y-3">
             <div className="flex items-center justify-between pb-1.5 border-b border-[var(--border-subtle)]">
-              <div>
-                <h4 className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">
-                  Timeline Segments List ({segments.length})
-                </h4>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Select segments to preview details
-                </p>
+              <div className="flex items-center gap-2.5">
+                {/* Custom Styled Select All Checkbox */}
+                <div
+                  onClick={() => {
+                    if (batchSelectedIds.length === segments.length) {
+                      setBatchSelectedIds([]);
+                    } else {
+                      setBatchSelectedIds(segments.map(s => s.id));
+                    }
+                  }}
+                  className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                    batchSelectedIds.length === segments.length && segments.length > 0
+                      ? 'bg-purple-600 border-purple-500 text-white'
+                      : batchSelectedIds.length > 0
+                      ? 'border-purple-500 bg-purple-600/15 text-purple-500'
+                      : 'border-[var(--border-main)] bg-[var(--bg-inner)] text-transparent hover:border-purple-500/50'
+                  }`}
+                  title={batchSelectedIds.length === segments.length ? 'Deselect All' : 'Select All'}
+                >
+                  {batchSelectedIds.length > 0 && batchSelectedIds.length < segments.length ? (
+                    <span className="w-1.5 h-0.5 bg-purple-500 rounded-full" />
+                  ) : (
+                    <Check className="w-2.5 h-2.5 stroke-[3] shrink-0" />
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-[10px] font-bold text-purple-500 uppercase tracking-wider flex items-center gap-1.5">
+                    Timeline Segments List ({segments.length})
+                  </h4>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Select segments to preview details
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -947,13 +1013,16 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                 {segments.map((seg) => {
                   const isSelected = selectedSegmentId === seg.id;
                   const isMenuOpen = activeMenuSegmentId === seg.id;
+                  const isBatchSelected = batchSelectedIds.includes(seg.id);
 
                   return (
                     <div
                       key={seg.id}
                       onClick={() => handleSeekToSegment(seg.id)}
                       className={`relative flex flex-col gap-1 p-2.5 rounded-lg border transition-all cursor-pointer group ${
-                        isSelected
+                        isBatchSelected
+                          ? 'border-purple-500 bg-purple-600/[0.04] shadow-xs'
+                          : isSelected
                           ? 'bg-purple-600/10 border-purple-500/30 shadow-xs'
                           : 'bg-[var(--bg-card)] border-[var(--border-main)] hover:border-purple-500/25'
                       }`}
@@ -967,6 +1036,19 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
                       )}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleBatchSelection(seg.id);
+                            }}
+                            className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                              isBatchSelected
+                                ? 'bg-purple-600 border-purple-500 text-white'
+                                : 'border-[var(--border-main)] bg-[var(--bg-inner)] text-transparent hover:border-purple-500/50'
+                            }`}
+                          >
+                            <Check className="w-2.5 h-2.5 stroke-[3] shrink-0" />
+                          </div>
                           <span className="text-[10px] font-semibold text-purple-500 uppercase tracking-wider font-mono">
                             S0{seg.segmentNumber}
                           </span>
@@ -1547,6 +1629,71 @@ export const AudioComposition: React.FC<AudioCompositionProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating Industry-Standard Batch Action Bar */}
+      {batchSelectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[var(--bg-panel)]/95 border border-[var(--border-main)] shadow-2xl rounded-full px-4 py-2 text-xs backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-1.5">
+            <span className="flex items-center justify-center bg-purple-600 text-white rounded-full px-2 py-0.5 text-[9px] font-bold font-mono">
+              {batchSelectedIds.length}
+            </span>
+            <span className="text-[11px] font-medium text-[var(--text-main)]">selected</span>
+          </div>
+
+          <div className="h-4 w-px bg-[var(--border-main)]" />
+
+          <div className="flex items-center gap-1">
+            {/* Regenerate Button */}
+            <button
+              type="button"
+              onClick={handleBatchRegenerate}
+              className="px-2.5 py-1 rounded-full hover:bg-purple-500/10 text-purple-400 hover:text-white transition-colors text-[10px] font-semibold cursor-pointer flex items-center gap-1"
+              title="Regenerate all selected segments"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Regenerate</span>
+            </button>
+
+            {/* Change Voice Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenBatchVoicePicker) {
+                  onOpenBatchVoicePicker(batchSelectedIds);
+                }
+              }}
+              className="px-2.5 py-1 rounded-full hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors text-[10px] font-semibold cursor-pointer flex items-center gap-1"
+            >
+              <span>Change Voice</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Delete Button */}
+            {segments.length > batchSelectedIds.length && (
+              <button
+                type="button"
+                onClick={handleBatchDelete}
+                className="px-2.5 py-1 rounded-full hover:bg-red-500/10 text-red-400 hover:text-white transition-colors text-[10px] font-semibold cursor-pointer flex items-center gap-1"
+                title="Delete all selected segments"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-[var(--border-main)]" />
+
+          <button
+            type="button"
+            onClick={() => setBatchSelectedIds([])}
+            className="p-1 rounded hover:bg-[var(--bg-inner)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+            title="Deselect all"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
